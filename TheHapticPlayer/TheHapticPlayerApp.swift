@@ -1,17 +1,13 @@
-//
-//  TheHapticPlayerApp.swift
-//  TheHapticPlayer
-//
-//  Created by Ravindu Lachiththa on 2026-04-11.
-//
-
 import SwiftUI
 
 @main
 struct TheHapticPlayerApp: App {
+    @State private var videoStore = VideoStore()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(videoStore)
         }
     }
 }
