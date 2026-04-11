@@ -29,8 +29,10 @@ struct DocumentPickerView: UIViewControllerRepresentable {
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             guard let url = urls.first else { return }
             let originalName = url.deletingPathExtension().lastPathComponent
-            parent.videoStore.addVideo(from: url, originalName: originalName)
-            parent.dismiss()
+            Task { @MainActor in
+                await parent.videoStore.addVideo(from: url, originalName: originalName)
+                parent.dismiss()
+            }
         }
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {

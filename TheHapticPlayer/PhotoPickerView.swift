@@ -53,7 +53,7 @@ struct PhotoPickerView: UIViewControllerRepresentable {
                     let originalName = url.deletingPathExtension().lastPathComponent
 
                     Task { @MainActor in
-                        self.parent.videoStore.addVideo(from: tempURL, originalName: originalName)
+                        await self.parent.videoStore.addVideo(from: tempURL, originalName: originalName)
                         try? FileManager.default.removeItem(at: tempURL)
                         self.parent.dismiss()
                     }

@@ -13,7 +13,7 @@ class VideoStore {
         load()
     }
 
-    func addVideo(from sourceURL: URL, originalName: String) {
+    func addVideo(from sourceURL: URL, originalName: String) async {
         let ext = sourceURL.pathExtension.isEmpty ? "mov" : sourceURL.pathExtension
         let fileName = "\(UUID().uuidString).\(ext)"
         let destinationURL = VideoItem.videosDirectory.appendingPathComponent(fileName)
@@ -25,12 +25,22 @@ class VideoStore {
             return
         }
 
-        let item = VideoItem(
+        var item = VideoItem(
             id: UUID(),
             name: originalName,
             fileName: fileName,
             dateAdded: Date()
         )
+
+        // Fetch duration immediately so it shows in the list right away
+        let asset = AVAsset(url: destinationURL)
+        if let duration = try? await asset.load(.duration) {
+            let seconds = CMTimeGetSeconds(duration)
+            if seconds.isFinite {
+                item.duration = seconds
+            }
+        }
+
         videos.insert(item, at: 0)
         save()
     }

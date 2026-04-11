@@ -7,6 +7,7 @@ struct VideoPlayerView: View {
     @State private var player: AVPlayer?
     @State private var showResumeAlert = false
     @State private var resumePosition: TimeInterval = 0
+    @State private var isFullscreen = false
 
     var body: some View {
         PlayerViewController(player: $player)
@@ -14,28 +15,29 @@ struct VideoPlayerView: View {
             .navigationTitle(video.name)
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
+                UIDevice.current.beginGeneratingDeviceOrientationNotifications()
                 let avPlayer = AVPlayer(url: video.fileURL)
                 player = avPlayer
 
-                // Check if there's a saved position
                 if let position = video.lastPlaybackPosition, position > 0 {
                     resumePosition = position
                     showResumeAlert = true
                 } else {
                     avPlayer.play()
                 }
-
-                // Fetch duration if not stored yet
-                if video.duration == nil {
-                    Task {
-                        if let duration = try? await avPlayer.currentItem?.asset.load(.duration) {
-                            let seconds = CMTimeGetSeconds(duration)
-                            if seconds.isFinite {
-                                videoStore.updateDuration(for: video.id, duration: seconds)
-                            }
-                        }
-                    }
+            }
+            .onDisappear {
+                savePosition()
+                UIDevice.current.endGeneratingDeviceOrientationNotifications()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+                let orientation = UIDevice.current.orientation
+                if orientation.isLandscape && !isFullscreen {
+                    isFullscreen = true
                 }
+            }
+            .fullScreenCover(isPresented: $isFullscreen) {
+                FullscreenPlayerView(player: $player, isFullscreen: $isFullscreen)
             }
             .alert("Resume Playback", isPresented: $showResumeAlert) {
                 Button("Yes") {
@@ -49,17 +51,17 @@ struct VideoPlayerView: View {
             } message: {
                 Text("Continue from \(formatTime(resumePosition))?")
             }
-            .onDisappear {
-                // Save current position
-                if let currentTime = player?.currentTime() {
-                    let seconds = CMTimeGetSeconds(currentTime)
-                    if seconds.isFinite && seconds > 0 {
-                        videoStore.updatePlaybackPosition(for: video.id, position: seconds)
-                    }
-                }
-                player?.pause()
-                player = nil
+    }
+
+    private func savePosition() {
+        if let currentTime = player?.currentTime() {
+            let seconds = CMTimeGetSeconds(currentTime)
+            if seconds.isFinite && seconds > 0 {
+                videoStore.updatePlaybackPosition(for: video.id, position: seconds)
             }
+        }
+        player?.pause()
+        player = nil
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
@@ -73,22 +75,41 @@ struct VideoPlayerView: View {
     }
 }
 
+// Full screen player presented on landscape rotation
+struct FullscreenPlayerView: View {
+    @Binding var player: AVPlayer?
+    @Binding var isFullscreen: Bool
+
+    var body: some View {
+        PlayerViewController(player: $player)
+            .ignoresSafeArea()
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+                if UIDevice.current.orientation.isPortrait {
+                    isFullscreen = false
+                }
+            }
+    }
+}
+
 struct PlayerViewController: UIViewControllerRepresentable {
     @Binding var player: AVPlayer?
 
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let controller = AVPlayerViewController()
+    func makeUIViewController(context: Context) -> RotatablePlayerViewController {
+        let controller = RotatablePlayerViewController()
         controller.allowsPictureInPicturePlayback = true
-        controller.entersFullScreenWhenPlaybackBegins = false
         return controller
     }
 
-    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
+    func updateUIViewController(_ controller: RotatablePlayerViewController, context: Context) {
         controller.player = player
     }
 
-    // Support landscape auto-rotation
-    static func dismantleUIViewController(_ uiViewController: AVPlayerViewController, coordinator: ()) {
+    static func dismantleUIViewController(_ uiViewController: RotatablePlayerViewController, coordinator: ()) {
         uiViewController.player = nil
     }
+}
+
+final class RotatablePlayerViewController: AVPlayerViewController {
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .all }
+    override var shouldAutorotate: Bool { true }
 }
