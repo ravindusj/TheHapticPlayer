@@ -32,9 +32,15 @@ struct ContentView: View {
                                         Text(video.name)
                                             .font(.body)
                                             .lineLimit(1)
-                                        Text(video.dateAdded, style: .date)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                        HStack(spacing: 8) {
+                                            Text(video.dateAdded, style: .date)
+                                            if let duration = video.duration {
+                                                Text("·")
+                                                Text(formatDuration(duration))
+                                            }
+                                        }
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                     }
                                 }
                                 .padding(.vertical, 4)
@@ -85,6 +91,12 @@ struct ContentView: View {
                             LabeledContent("Added", value: video.dateAdded, format: .dateTime)
                             LabeledContent("File Size", value: fileSizeString(for: video))
                             LabeledContent("Format", value: video.fileName.components(separatedBy: ".").last?.uppercased() ?? "Unknown")
+                            if let duration = video.duration {
+                                LabeledContent("Duration", value: formatDuration(duration))
+                            }
+                            if let position = video.lastPlaybackPosition, position > 0 {
+                                LabeledContent("Resume At", value: formatDuration(position))
+                            }
                         }
                     }
                     .navigationTitle("Video Info")
@@ -106,6 +118,16 @@ struct ContentView: View {
                 DocumentPickerView()
             }
         }
+    }
+
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let hours = Int(seconds) / 3600
+        let minutes = (Int(seconds) % 3600) / 60
+        let secs = Int(seconds) % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, secs)
+        }
+        return String(format: "%d:%02d", minutes, secs)
     }
 
     private func fileSizeString(for video: VideoItem) -> String {

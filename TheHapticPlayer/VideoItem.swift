@@ -5,6 +5,8 @@ struct VideoItem: Identifiable, Codable {
     var name: String
     let fileName: String
     let dateAdded: Date
+    var duration: TimeInterval?
+    var lastPlaybackPosition: TimeInterval?
 
     var fileURL: URL {
         VideoItem.videosDirectory.appendingPathComponent(fileName)

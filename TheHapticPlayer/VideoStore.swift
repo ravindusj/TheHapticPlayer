@@ -35,6 +35,20 @@ class VideoStore {
         save()
     }
 
+    func updatePlaybackPosition(for videoID: UUID, position: TimeInterval) {
+        if let index = videos.firstIndex(where: { $0.id == videoID }) {
+            videos[index].lastPlaybackPosition = position
+            save()
+        }
+    }
+
+    func updateDuration(for videoID: UUID, duration: TimeInterval) {
+        if let index = videos.firstIndex(where: { $0.id == videoID }) {
+            videos[index].duration = duration
+            save()
+        }
+    }
+
     func deleteVideo(at offsets: IndexSet) {
         for index in offsets {
             let item = videos[index]
