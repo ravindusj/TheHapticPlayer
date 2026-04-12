@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var videoToRename: VideoItem?
     @State private var renameText = ""
+    @State private var videoToDelete: VideoItem?
 
     var filteredVideos: [VideoItem] {
         if searchText.isEmpty { return videoStore.videos }
@@ -53,11 +54,9 @@ struct ContentView: View {
                             }
                             .buttonStyle(.plain)
                             .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
-                                    if let index = videoStore.videos.firstIndex(where: { $0.id == video.id }) {
-                                        videoStore.deleteVideo(at: IndexSet(integer: index))
-                                    }
+                                    videoToDelete = video
                                 } label: {
                                     Image(systemName: "trash")
                                 }
@@ -137,6 +136,23 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingDocumentPicker) {
                 DocumentPickerView()
+            }
+            .alert("Delete Video", isPresented: Binding(
+                get: { videoToDelete != nil },
+                set: { if !$0 { videoToDelete = nil } }
+            )) {
+                Button("Cancel", role: .cancel) { videoToDelete = nil }
+                Button("Delete", role: .destructive) {
+                    if let video = videoToDelete,
+                       let index = videoStore.videos.firstIndex(where: { $0.id == video.id }) {
+                        videoStore.deleteVideo(at: IndexSet(integer: index))
+                    }
+                    videoToDelete = nil
+                }
+            } message: {
+                if let video = videoToDelete {
+                    Text("\"\(video.name)\" will be permanently deleted.")
+                }
             }
             .alert("Rename Video", isPresented: Binding(
                 get: { videoToRename != nil },
