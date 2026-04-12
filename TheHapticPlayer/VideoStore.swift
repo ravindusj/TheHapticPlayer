@@ -45,6 +45,13 @@ class VideoStore {
         save()
     }
 
+    func renameVideo(id: UUID, newName: String) {
+        if let index = videos.firstIndex(where: { $0.id == id }) {
+            videos[index].name = newName
+            save()
+        }
+    }
+
     func updatePlaybackPosition(for videoID: UUID, position: TimeInterval) {
         if let index = videos.firstIndex(where: { $0.id == videoID }) {
             videos[index].lastPlaybackPosition = position

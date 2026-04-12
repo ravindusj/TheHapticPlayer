@@ -8,6 +8,8 @@ struct ContentView: View {
     @State private var selectedVideoForInfo: VideoItem?
     @State private var selectedVideoForPlay: VideoItem?
     @State private var searchText = ""
+    @State private var videoToRename: VideoItem?
+    @State private var renameText = ""
 
     var filteredVideos: [VideoItem] {
         if searchText.isEmpty { return videoStore.videos }
@@ -67,6 +69,13 @@ struct ContentView: View {
                                     Image(systemName: "info.circle")
                                 }
                                 .tint(.blue)
+                                Button {
+                                    renameText = video.name
+                                    videoToRename = video
+                                } label: {
+                                    Image(systemName: "pencil.and.outline")
+                                }
+                                .tint(.orange)
                             }
                         }
                     }
@@ -128,6 +137,19 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingDocumentPicker) {
                 DocumentPickerView()
+            }
+            .alert("Rename Video", isPresented: Binding(
+                get: { videoToRename != nil },
+                set: { if !$0 { videoToRename = nil } }
+            )) {
+                TextField("Video name", text: $renameText)
+                Button("Cancel", role: .cancel) { videoToRename = nil }
+                Button("Save") {
+                    if let video = videoToRename, !renameText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        videoStore.renameVideo(id: video.id, newName: renameText.trimmingCharacters(in: .whitespaces))
+                    }
+                    videoToRename = nil
+                }
             }
         }
     }
