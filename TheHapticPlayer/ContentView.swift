@@ -6,6 +6,12 @@ struct ContentView: View {
     @State private var showingPhotoPicker = false
     @State private var showingDocumentPicker = false
     @State private var selectedVideoForInfo: VideoItem?
+    @State private var searchText = ""
+
+    var filteredVideos: [VideoItem] {
+        if searchText.isEmpty { return videoStore.videos }
+        return videoStore.videos.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -16,17 +22,14 @@ struct ContentView: View {
                         systemImage: "film",
                         description: Text("Tap + to add videos from your library or files.")
                     )
+                } else if filteredVideos.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
                 } else {
                     List {
-                        ForEach(videoStore.videos) { video in
+                        ForEach(filteredVideos) { video in
                             NavigationLink(destination: VideoPlayerView(video: video)) {
                                 HStack(spacing: 12) {
-                                    Image(systemName: "film")
-                                        .font(.title2)
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 44, height: 44)
-                                        .background(Color(.tertiarySystemFill))
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    VideoThumbnailView(url: video.fileURL)
 
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(video.name)
@@ -43,27 +46,30 @@ struct ContentView: View {
                                         .foregroundStyle(.secondary)
                                     }
                                 }
-                                .padding(.vertical, 4)
                             }
-                            .contextMenu {
-                                Button {
-                                    selectedVideoForInfo = video
-                                } label: {
-                                    Label("Info", systemImage: "info.circle")
-                                }
+                            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
                                     if let index = videoStore.videos.firstIndex(where: { $0.id == video.id }) {
                                         videoStore.deleteVideo(at: IndexSet(integer: index))
                                     }
                                 } label: {
-                                    Label("Delete", systemImage: "trash")
+                                    Image(systemName: "trash")
                                 }
                             }
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                Button {
+                                    selectedVideoForInfo = video
+                                } label: {
+                                    Image(systemName: "info.circle")
+                                }
+                                .tint(.blue)
+                            }
                         }
-                        .onDelete(perform: videoStore.deleteVideo)
                     }
                 }
             }
+            .searchable(text: $searchText, prompt: "Search videos")
             .navigationTitle("TheHaptic Player")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
