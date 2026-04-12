@@ -59,6 +59,7 @@ struct ContentView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 }
+                                Spacer(minLength: 0)
                             }
                             .contentShape(Rectangle())
                             .onTapGesture {
