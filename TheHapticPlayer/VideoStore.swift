@@ -33,7 +33,7 @@ class VideoStore {
         )
 
         // Fetch duration immediately so it shows in the list right away
-        let asset = AVAsset(url: destinationURL)
+        let asset = AVURLAsset(url: destinationURL)
         if let duration = try? await asset.load(.duration) {
             let seconds = CMTimeGetSeconds(duration)
             if seconds.isFinite {

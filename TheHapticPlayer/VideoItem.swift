@@ -1,6 +1,6 @@
 import Foundation
 
-struct VideoItem: Identifiable, Codable {
+struct VideoItem: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
     let fileName: String

@@ -6,6 +6,7 @@ struct ContentView: View {
     @State private var showingPhotoPicker = false
     @State private var showingDocumentPicker = false
     @State private var selectedVideoForInfo: VideoItem?
+    @State private var selectedVideoForPlay: VideoItem?
     @State private var searchText = ""
 
     var filteredVideos: [VideoItem] {
@@ -27,7 +28,7 @@ struct ContentView: View {
                 } else {
                     List {
                         ForEach(filteredVideos) { video in
-                            NavigationLink(destination: VideoPlayerView(video: video)) {
+                            Button { selectedVideoForPlay = video } label: {
                                 HStack(spacing: 12) {
                                     VideoThumbnailView(url: video.fileURL)
 
@@ -35,6 +36,7 @@ struct ContentView: View {
                                         Text(video.name)
                                             .font(.body)
                                             .lineLimit(1)
+                                            .foregroundStyle(.primary)
                                         HStack(spacing: 8) {
                                             Text(video.dateAdded, style: .date)
                                             if let duration = video.duration {
@@ -47,6 +49,7 @@ struct ContentView: View {
                                     }
                                 }
                             }
+                            .buttonStyle(.plain)
                             .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
@@ -70,6 +73,9 @@ struct ContentView: View {
                 }
             }
             .searchable(text: $searchText, prompt: "Search videos")
+            .navigationDestination(item: $selectedVideoForPlay) { video in
+                VideoPlayerView(video: video)
+            }
             .navigationTitle("TheHaptic Player")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

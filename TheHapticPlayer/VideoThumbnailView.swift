@@ -22,6 +22,12 @@ struct VideoThumbnailView: View {
         }
         .frame(width: 80, height: 50)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            Image(systemName: "play.circle.fill")
+                .font(.title2)
+                .foregroundStyle(.white.opacity(0.9))
+                .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 1)
+        }
         .task(id: url) {
             guard thumbnail == nil else { return }
             thumbnail = await generateThumbnail(url: url)
@@ -29,7 +35,7 @@ struct VideoThumbnailView: View {
     }
 
     private func generateThumbnail(url: URL) async -> UIImage? {
-        let asset = AVAsset(url: url)
+        let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 160, height: 100)
