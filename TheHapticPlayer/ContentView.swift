@@ -16,6 +16,10 @@ struct ContentView: View {
     @State private var showBatchDeleteConfirm = false
     @State private var showHapticError = false
     @State private var animatingVideos: Set<UUID> = []
+    @State private var shimmeringVideos: Set<UUID> = []
+    @State private var videoToCancel: VideoItem?
+    @State private var showCancelConfirm = false
+    @State private var knownVideoIds: Set<UUID> = []
 
     var filteredVideos: [VideoItem] {
         if searchText.isEmpty { return videoStore.videos }
@@ -83,6 +87,14 @@ struct ContentView: View {
                 Button("Cancel", role: .cancel) { videoToRename = nil }
                 Button("Save") { renameSave() }
             }
+            .alert("Cancel Task?", isPresented: $showCancelConfirm) {
+                Button("Keep Analysing", role: .cancel) {}
+                Button("Cancel", role: .destructive) { cancelAnalysis() }
+            } message: {
+                if let video = videoToCancel {
+                    Text("Stop haptic analysis for \"\(video.name)\"? The video will be kept.")
+                }
+            }
             .alert("Haptic Analysis Error", isPresented: $showHapticError) {
                 Button("OK", role: .cancel) { hapticManager.activeError = nil }
             } message: {
@@ -93,6 +105,9 @@ struct ContentView: View {
             }
             .onChange(of: videoStore.videos.count) { oldCount, newCount in
                 if newCount > oldCount { handleNewVideos() }
+            }
+            .onAppear {
+                knownVideoIds = Set(videoStore.videos.map(\.id))
             }
         }
     }
@@ -107,6 +122,7 @@ struct ContentView: View {
                     isSelecting: isSelecting,
                     isSelected: selectedVideos.contains(video.id),
                     isBlurred: video.isProcessingHaptics || animatingVideos.contains(video.id),
+                    isShimmering: shimmeringVideos.contains(video.id),
                     onTap: { handleTap(video) },
                     onLongPress: { handleLongPress(video) },
                     onAnimationStarted: { animatingVideos.insert(video.id) },
@@ -162,6 +178,25 @@ struct ContentView: View {
                 }
                 .disabled(selectedVideos.isEmpty)
             }
+        } else if videoToCancel != nil {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        videoToCancel = nil
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .destructive) {
+                    showCancelConfirm = true
+                } label: {
+                    Text("Cancel")
+                        .foregroundStyle(.red)
+                }
+            }
         } else {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink(destination: SettingsView()) {
@@ -186,22 +221,37 @@ struct ContentView: View {
     // MARK: - Actions
 
     private func handleNewVideos() {
-        let newVideos = videoStore.videos.filter { $0.hapticStatus == nil && !$0.hasHaptics }
+        let newVideos = videoStore.videos.filter { !knownVideoIds.contains($0.id) }
         guard !newVideos.isEmpty else { return }
-        Task {
-            let serverUp = (try? await HapticAPIClient.shared.healthCheck()) ?? false
-            await MainActor.run {
-                if serverUp {
-                    for video in newVideos {
-                        hapticManager.startAnalysis(for: video, in: videoStore)
-                    }
-                } else {
-                    for video in newVideos {
-                        if let index = videoStore.videos.firstIndex(where: { $0.id == video.id }) {
-                            videoStore.deleteVideo(at: IndexSet(integer: index))
+
+        // Mark as known immediately so they won't be picked up again
+        for video in newVideos {
+            knownVideoIds.insert(video.id)
+            shimmeringVideos.insert(video.id)
+        }
+
+        // After shimmer plays, transition to blur + start analysis
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            Task {
+                let serverUp = (try? await HapticAPIClient.shared.healthCheck()) ?? false
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        for video in newVideos {
+                            shimmeringVideos.remove(video.id)
                         }
                     }
-                    hapticManager.activeError = "Cannot connect to haptic server. Video was not added."
+                    if serverUp {
+                        for video in newVideos {
+                            hapticManager.startAnalysis(for: video, in: videoStore)
+                        }
+                    } else {
+                        for video in newVideos {
+                            if let index = videoStore.videos.firstIndex(where: { $0.id == video.id }) {
+                                videoStore.deleteVideo(at: IndexSet(integer: index))
+                            }
+                        }
+                        hapticManager.activeError = "Cannot connect to haptic server. Video was not added."
+                    }
                 }
             }
         }
@@ -223,10 +273,26 @@ struct ContentView: View {
     }
 
     private func handleLongPress(_ video: VideoItem) {
-        guard !isSelecting, !video.isProcessingHaptics, !animatingVideos.contains(video.id) else { return }
-        withAnimation(.easeInOut(duration: 0.25)) {
-            isSelecting = true
-            selectedVideos = [video.id]
+        guard !isSelecting else { return }
+        if video.isProcessingHaptics || animatingVideos.contains(video.id) {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                videoToCancel = video
+            }
+        } else {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                isSelecting = true
+                selectedVideos = [video.id]
+            }
+        }
+    }
+
+    private func cancelAnalysis() {
+        guard let video = videoToCancel else { return }
+        hapticManager.cancelAnalysis(for: video.id)
+        videoStore.clearHapticData(for: video.id)
+        withAnimation(.easeInOut(duration: 0.4)) {
+            animatingVideos.remove(video.id)
+            videoToCancel = nil
         }
     }
 
@@ -286,6 +352,7 @@ struct VideoRowView: View {
     let isSelecting: Bool
     let isSelected: Bool
     let isBlurred: Bool
+    let isShimmering: Bool
     let onTap: () -> Void
     let onLongPress: () -> Void
     let onAnimationStarted: () -> Void
@@ -297,8 +364,9 @@ struct VideoRowView: View {
                 .opacity(isBlurred ? 0.3 : 1.0)
                 .blur(radius: isBlurred ? 2 : 0)
                 .overlay {
-                    if isBlurred {
+                    if isShimmering {
                         ShimmerView()
+                            .id(video.id)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .allowsHitTesting(false)
                     }
@@ -313,6 +381,7 @@ struct VideoRowView: View {
             }
         }
         .animation(.easeInOut(duration: 0.4), value: isBlurred)
+        .animation(.easeInOut(duration: 0.3), value: isShimmering)
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
         .simultaneousGesture(
@@ -648,36 +717,25 @@ struct SmoothProgressOverlay: View {
 // MARK: - Shimmer
 
 struct ShimmerView: View {
-    @State private var phase: CGFloat = 0
+    @State private var startPoint: UnitPoint = .init(x: -0.5, y: 0.5)
+    @State private var endPoint: UnitPoint = .init(x: 0, y: 0.5)
 
     var body: some View {
-        GeometryReader { geo in
-            let width = geo.size.width
-            Rectangle()
-                .fill(.clear)
-                .overlay {
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .clear, location: 0),
-                                    .init(color: .white.opacity(0.4), location: 0.3),
-                                    .init(color: .white.opacity(0.6), location: 0.5),
-                                    .init(color: .white.opacity(0.4), location: 0.7),
-                                    .init(color: .clear, location: 1.0),
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: width * 0.7)
-                        .offset(x: -width + phase * width * 2)
-                }
-        }
-        .clipped()
+        LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .white.opacity(0.5), location: 0.4),
+                .init(color: .white.opacity(0.7), location: 0.5),
+                .init(color: .white.opacity(0.5), location: 0.6),
+                .init(color: .clear, location: 1.0),
+            ],
+            startPoint: startPoint,
+            endPoint: endPoint
+        )
         .onAppear {
-            withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) {
-                phase = 1
+            withAnimation(.easeOut(duration: 0.4)) {
+                startPoint = .init(x: 1, y: 0.5)
+                endPoint = .init(x: 1.5, y: 0.5)
             }
         }
     }
