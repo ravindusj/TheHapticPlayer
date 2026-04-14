@@ -13,15 +13,15 @@ enum HapticStatus: String, Codable {
 
     var displayLabel: String {
         switch self {
-        case .queued: "Queued"
-        case .extractingAudio: "Extracting Audio"
-        case .analyzingDSP: "Analyzing Audio"
-        case .analyzingVideo: "Analyzing Video"
-        case .classifyingAI: "AI Classification"
-        case .scoring: "Scoring"
-        case .generatingAHAP: "Generating Haptics"
-        case .completed: "Completed"
-        case .failed: "Failed"
+        case .queued: "Preparing your experience..."
+        case .extractingAudio: "Listening to the soundtrack..."
+        case .analyzingDSP: "Feeling the frequencies..."
+        case .analyzingVideo: "Watching every frame..."
+        case .classifyingAI: "Understanding the scene..."
+        case .scoring: "Crafting the vibrations..."
+        case .generatingAHAP: "Bringing it to life..."
+        case .completed: "Ready to feel"
+        case .failed: "Something went wrong"
         }
     }
 }
