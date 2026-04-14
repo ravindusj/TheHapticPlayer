@@ -92,11 +92,7 @@ struct ContentView: View {
                 if newValue != nil { showHapticError = true }
             }
             .onChange(of: videoStore.videos.count) { oldCount, newCount in
-                if newCount > oldCount {
-                    for video in videoStore.videos where video.hapticStatus == nil && !video.hasHaptics {
-                        hapticManager.startAnalysis(for: video, in: videoStore)
-                    }
-                }
+                if newCount > oldCount { handleNewVideos() }
             }
         }
     }
@@ -189,6 +185,28 @@ struct ContentView: View {
 
     // MARK: - Actions
 
+    private func handleNewVideos() {
+        let newVideos = videoStore.videos.filter { $0.hapticStatus == nil && !$0.hasHaptics }
+        guard !newVideos.isEmpty else { return }
+        Task {
+            let serverUp = (try? await HapticAPIClient.shared.healthCheck()) ?? false
+            await MainActor.run {
+                if serverUp {
+                    for video in newVideos {
+                        hapticManager.startAnalysis(for: video, in: videoStore)
+                    }
+                } else {
+                    for video in newVideos {
+                        if let index = videoStore.videos.firstIndex(where: { $0.id == video.id }) {
+                            videoStore.deleteVideo(at: IndexSet(integer: index))
+                        }
+                    }
+                    hapticManager.activeError = "Cannot connect to haptic server. Video was not added."
+                }
+            }
+        }
+    }
+
     private func handleTap(_ video: VideoItem) {
         guard !video.isProcessingHaptics, !animatingVideos.contains(video.id) else { return }
         if isSelecting {
@@ -278,6 +296,13 @@ struct VideoRowView: View {
             rowContent
                 .opacity(isBlurred ? 0.3 : 1.0)
                 .blur(radius: isBlurred ? 2 : 0)
+                .overlay {
+                    if isBlurred {
+                        ShimmerView()
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .allowsHitTesting(false)
+                    }
+                }
 
             if isBlurred {
                 SmoothProgressOverlay(
@@ -315,15 +340,22 @@ struct VideoRowView: View {
                     .font(.body)
                     .lineLimit(1)
                     .foregroundStyle(.primary)
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Text(video.dateAdded, style: .date)
                     if let duration = video.duration {
                         Text("·")
                         Text(formatDuration(duration))
                     }
                     if video.hasHaptics {
-                        Image(systemName: "waveform.path")
-                            .foregroundStyle(.purple)
+                        Text("·")
+                        Text("HAPTIC")
+                            .font(.system(size: 8, weight: .semibold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(.secondary, lineWidth: 0.8)
+                            )
                     }
                 }
                 .font(.caption)
@@ -447,25 +479,61 @@ struct SmoothProgressOverlay: View {
     @State private var serverDone = false
     @State private var finishing = false
     @State private var completed = false
+    @State private var stageTargets: [Double] = []
+    @State private var holdStageIndices: Set<Int> = []
 
-    private static let holdStages: Set<Int> = [5, 8]
-
-    private static let stages: [(end: Double, label: String)] = [
-        (8,   "Preparing your experience..."),
-        (18,  "Listening to the soundtrack..."),
-        (30,  "Feeling the frequencies..."),
-        (42,  "Watching every frame..."),
-        (54,  "Understanding the scene..."),
-        (60,  "Learning the moments..."),
-        (72,  "Crafting the vibrations..."),
-        (82,  "Bringing it to life..."),
-        (95,  "Final touches..."),
+    private static let labels: [String] = [
+        "Preparing your experience...",
+        "Listening to the soundtrack...",
+        "Feeling the frequencies...",
+        "Watching every frame...",
+        "Understanding the scene...",
+        "Learning the moments...",
+        "Crafting the vibrations...",
+        "Bringing it to life...",
+        "Final touches...",
     ]
+
+    /// Generates randomized stage endpoints so each run feels different
+    private static func generateStageTargets() -> [Double] {
+        // Base ranges for each stage — randomize within these bands
+        let bands: [(low: Double, high: Double)] = [
+            (5, 12),      // stage 0: ~5-12%
+            (14, 22),     // stage 1: ~14-22%
+            (25, 38),     // stage 2: ~25-38%
+            (36, 48),     // stage 3: ~36-48%
+            (46, 58),     // stage 4: ~46-58%
+            (55, 68),     // stage 5: ~55-68%
+            (65, 78),     // stage 6: ~65-78%
+            (76, 88),     // stage 7: ~76-88%
+            (90, 97),     // stage 8: ~90-97%
+        ]
+        var targets: [Double] = []
+        var prev: Double = 0
+        for band in bands {
+            let clamped = max(prev + 3, Double.random(in: band.low...band.high))
+            targets.append(min(clamped, 98))
+            prev = clamped
+        }
+        return targets
+    }
+
+    /// Pick 2–3 random stages to pause at (waiting for server)
+    private static func generateHoldStages() -> Set<Int> {
+        let count = Int.random(in: 2...3)
+        // Pick from middle stages (1–7) to hold at
+        var holds: Set<Int> = []
+        let candidates = Array(1...7)
+        while holds.count < count {
+            holds.insert(candidates.randomElement()!)
+        }
+        return holds
+    }
 
     private var stageLabel: String {
         if completed { return "Ready to feel" }
-        let idx = min(currentStage, Self.stages.count - 1)
-        return Self.stages[idx].label
+        let idx = min(currentStage, Self.labels.count - 1)
+        return Self.labels[idx]
     }
 
     var body: some View {
@@ -490,7 +558,11 @@ struct SmoothProgressOverlay: View {
             .animation(.easeInOut(duration: 0.3), value: currentStage)
             .animation(.easeInOut(duration: 0.3), value: completed)
         }
-        .onAppear { advanceToNextStage() }
+        .onAppear {
+            stageTargets = Self.generateStageTargets()
+            holdStageIndices = Self.generateHoldStages()
+            advanceToNextStage()
+        }
         .onChange(of: targetProgress) {
             if targetProgress >= 100 && !serverDone {
                 serverDone = true
@@ -505,23 +577,26 @@ struct SmoothProgressOverlay: View {
     }
 
     private func advanceToNextStage() {
-        guard currentStage < Self.stages.count else {
+        guard currentStage < stageTargets.count else {
             if serverDone { fillToComplete() }
             return
         }
 
-        let stageEnd = Self.stages[currentStage].end
-        let duration: TimeInterval = finishing ? 0.8 : 3.5
+        let stageEnd = stageTargets[currentStage]
+        // Randomize duration per stage so speed feels organic
+        let baseDuration: TimeInterval = finishing ? Double.random(in: 0.5...1.0) : Double.random(in: 2.0...5.0)
         let tickInterval: TimeInterval = 0.04
-        let totalTicks = duration / tickInterval
+        let totalTicks = baseDuration / tickInterval
         let progressNeeded = stageEnd - displayedProgress
         let stepPerTick = max(0.01, progressNeeded / totalTicks)
 
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: tickInterval, repeats: true) { t in
             if displayedProgress < stageEnd {
+                // Add slight jitter to step size for realism
+                let jitter = Double.random(in: 0.7...1.3)
                 withAnimation(.linear(duration: tickInterval)) {
-                    displayedProgress = min(displayedProgress + stepPerTick, stageEnd)
+                    displayedProgress = min(displayedProgress + stepPerTick * jitter, stageEnd)
                 }
             } else {
                 t.invalidate()
@@ -531,15 +606,20 @@ struct SmoothProgressOverlay: View {
                     finishing = true
                 }
 
-                if Self.holdStages.contains(currentStage) && !serverDone {
+                // Hold at random stages until server finishes
+                if holdStageIndices.contains(currentStage) && !serverDone {
                     return
                 }
 
-                if currentStage < Self.stages.count - 1 {
-                    currentStage += 1
-                    advanceToNextStage()
-                } else if serverDone {
-                    fillToComplete()
+                // Random micro-pause between stages (0.3–1.5s) to feel natural
+                let pause = finishing ? 0.15 : Double.random(in: 0.3...1.5)
+                DispatchQueue.main.asyncAfter(deadline: .now() + pause) {
+                    if currentStage < stageTargets.count - 1 {
+                        currentStage += 1
+                        advanceToNextStage()
+                    } else if serverDone {
+                        fillToComplete()
+                    }
                 }
             }
         }
@@ -560,6 +640,44 @@ struct SmoothProgressOverlay: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                     onFinished?()
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Shimmer
+
+struct ShimmerView: View {
+    @State private var phase: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            Rectangle()
+                .fill(.clear)
+                .overlay {
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .clear, location: 0),
+                                    .init(color: .white.opacity(0.4), location: 0.3),
+                                    .init(color: .white.opacity(0.6), location: 0.5),
+                                    .init(color: .white.opacity(0.4), location: 0.7),
+                                    .init(color: .clear, location: 1.0),
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: width * 0.7)
+                        .offset(x: -width + phase * width * 2)
+                }
+        }
+        .clipped()
+        .onAppear {
+            withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) {
+                phase = 1
             }
         }
     }

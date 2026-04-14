@@ -6,6 +6,7 @@ class HapticAnalysisManager {
 
     private var pollingTasks: [UUID: Task<Void, Never>] = [:]
     private let apiClient = HapticAPIClient.shared
+    private let maxRetries = 5
 
     func startAnalysis(
         for video: VideoItem,
@@ -14,7 +15,6 @@ class HapticAnalysisManager {
         style: String = "auto",
         bassBoost: Float = 1.0
     ) {
-        // Cancel any existing polling for this video
         pollingTasks[video.id]?.cancel()
 
         Task {
@@ -53,6 +53,7 @@ class HapticAnalysisManager {
     func resumeIncompleteJobs(in store: VideoStore) {
         for video in store.videos {
             if video.isProcessingHaptics, let jobId = video.hapticJobId {
+                // Try to resume — if server is down, it will auto-clear after retries
                 startPolling(videoId: video.id, jobId: jobId, store: store)
             }
         }
@@ -65,12 +66,15 @@ class HapticAnalysisManager {
     private func startPolling(videoId: UUID, jobId: String, store: VideoStore) {
         pollingTasks[videoId]?.cancel()
         pollingTasks[videoId] = Task {
+            var failCount = 0
+
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3))
                 guard !Task.isCancelled else { break }
 
                 do {
                     let status = try await apiClient.checkStatus(jobId: jobId)
+                    failCount = 0 // Reset on success
 
                     await MainActor.run {
                         let hapticStatus = HapticStatus(rawValue: status.status) ?? .queued
@@ -88,11 +92,19 @@ class HapticAnalysisManager {
                     } else if status.status == "failed" {
                         await MainActor.run {
                             self.activeError = status.error ?? "Analysis failed"
+                            store.clearHapticData(for: videoId)
                         }
                         break
                     }
                 } catch {
-                    // Network error — continue polling, will retry
+                    failCount += 1
+                    if failCount >= maxRetries {
+                        await MainActor.run {
+                            self.activeError = "Server unreachable. Analysis cancelled."
+                            store.clearHapticData(for: videoId)
+                        }
+                        break
+                    }
                 }
             }
             pollingTasks[videoId] = nil
@@ -111,6 +123,7 @@ class HapticAnalysisManager {
         } catch {
             await MainActor.run {
                 self.activeError = "Failed to download haptic data: \(error.localizedDescription)"
+                store.clearHapticData(for: videoId)
             }
         }
     }
