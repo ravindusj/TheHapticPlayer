@@ -4,29 +4,65 @@ import AVKit
 struct VideoPlayerView: View {
     let video: VideoItem
     @Environment(VideoStore.self) var videoStore
+    @AppStorage("autoResume") private var autoResume = false
+    @AppStorage("defaultPlaybackSpeed") private var defaultPlaybackSpeed: Double = 1.0
     @State private var player: AVPlayer?
     @State private var showResumeAlert = false
     @State private var resumePosition: TimeInterval = 0
     @State private var isFullscreen = false
+    @State private var hapticEngine = HapticEngineManager()
+    @State private var hapticsEnabled = true
 
     var body: some View {
         PlayerViewController(player: $player)
             .ignoresSafeArea()
             .navigationTitle(video.name)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if video.hasHaptics && HapticEngineManager.supportsHaptics {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            hapticsEnabled.toggle()
+                            hapticEngine.isHapticEnabled = hapticsEnabled
+                        } label: {
+                            Image(systemName: hapticsEnabled ? "waveform.path" : "waveform.slash")
+                        }
+                    }
+                }
+            }
             .onAppear {
                 UIDevice.current.beginGeneratingDeviceOrientationNotifications()
                 let avPlayer = AVPlayer(url: video.fileURL)
+                avPlayer.rate = Float(defaultPlaybackSpeed)
                 player = avPlayer
 
+                // Load haptics if available
+                if video.hasHaptics, let ahapURL = video.ahapFileURL {
+                    do {
+                        try hapticEngine.loadAHAP(from: ahapURL)
+                        hapticEngine.attachToPlayer(avPlayer)
+                    } catch {
+                        print("Failed to load haptics: \(error)")
+                    }
+                }
+
                 if let position = video.lastPlaybackPosition, position > 0 {
-                    resumePosition = position
-                    showResumeAlert = true
+                    if autoResume {
+                        let time = CMTime(seconds: position, preferredTimescale: 600)
+                        avPlayer.seek(to: time)
+                        avPlayer.play()
+                        avPlayer.rate = Float(defaultPlaybackSpeed)
+                    } else {
+                        resumePosition = position
+                        showResumeAlert = true
+                    }
                 } else {
                     avPlayer.play()
+                    avPlayer.rate = Float(defaultPlaybackSpeed)
                 }
             }
             .onDisappear {
+                hapticEngine.detach()
                 savePosition()
                 UIDevice.current.endGeneratingDeviceOrientationNotifications()
             }
@@ -44,9 +80,11 @@ struct VideoPlayerView: View {
                     let time = CMTime(seconds: resumePosition, preferredTimescale: 600)
                     player?.seek(to: time)
                     player?.play()
+                    player?.rate = Float(defaultPlaybackSpeed)
                 }
                 Button("No", role: .cancel) {
                     player?.play()
+                    player?.rate = Float(defaultPlaybackSpeed)
                 }
             } message: {
                 Text("Continue from \(formatTime(resumePosition))?")

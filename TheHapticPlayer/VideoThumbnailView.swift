@@ -3,6 +3,7 @@ import AVFoundation
 
 struct VideoThumbnailView: View {
     let url: URL
+    var progress: Double? = nil
     @State private var thumbnail: UIImage?
 
     var body: some View {
@@ -27,6 +28,17 @@ struct VideoThumbnailView: View {
                 .font(.title2)
                 .foregroundStyle(.white.opacity(0.9))
                 .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 1)
+        }
+        .overlay(alignment: .bottom) {
+            if let progress, progress > 0 {
+                GeometryReader { geo in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color.accentColor)
+                        .frame(width: geo.size.width * min(progress, 1.0), height: 3)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
         }
         .task(id: url) {
             guard thumbnail == nil else { return }

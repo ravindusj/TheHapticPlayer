@@ -10,6 +10,10 @@ class VideoStore {
             at: VideoItem.videosDirectory,
             withIntermediateDirectories: true
         )
+        try? FileManager.default.createDirectory(
+            at: VideoItem.hapticsDirectory,
+            withIntermediateDirectories: true
+        )
         load()
     }
 
@@ -66,10 +70,44 @@ class VideoStore {
         }
     }
 
+    func updateHapticStatus(for videoID: UUID, jobId: String, status: HapticStatus, progress: Double?) {
+        if let index = videos.firstIndex(where: { $0.id == videoID }) {
+            videos[index].hapticJobId = jobId
+            videos[index].hapticStatus = status
+            videos[index].hapticProgress = progress
+            save()
+        }
+    }
+
+    func setAHAPFile(for videoID: UUID, fileName: String) {
+        if let index = videos.firstIndex(where: { $0.id == videoID }) {
+            videos[index].ahapFileName = fileName
+            videos[index].hapticStatus = .completed
+            videos[index].hapticProgress = 100
+            save()
+        }
+    }
+
+    func clearHapticData(for videoID: UUID) {
+        if let index = videos.firstIndex(where: { $0.id == videoID }) {
+            if let ahapURL = videos[index].ahapFileURL {
+                try? FileManager.default.removeItem(at: ahapURL)
+            }
+            videos[index].hapticJobId = nil
+            videos[index].hapticStatus = nil
+            videos[index].hapticProgress = nil
+            videos[index].ahapFileName = nil
+            save()
+        }
+    }
+
     func deleteVideo(at offsets: IndexSet) {
         for index in offsets {
             let item = videos[index]
             try? FileManager.default.removeItem(at: item.fileURL)
+            if let ahapURL = item.ahapFileURL {
+                try? FileManager.default.removeItem(at: ahapURL)
+            }
         }
         videos.remove(atOffsets: offsets)
         save()

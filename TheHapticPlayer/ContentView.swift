@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(VideoStore.self) var videoStore
+    @Environment(HapticAnalysisManager.self) var hapticManager
     @State private var showingAddOptions = false
     @State private var showingPhotoPicker = false
     @State private var showingDocumentPicker = false
@@ -14,6 +15,7 @@ struct ContentView: View {
     @State private var isSelecting = false
     @State private var selectedVideos: Set<UUID> = []
     @State private var showBatchDeleteConfirm = false
+    @State private var showHapticError = false
 
     var filteredVideos: [VideoItem] {
         if searchText.isEmpty { return videoStore.videos }
@@ -42,7 +44,10 @@ struct ContentView: View {
                                         .transition(.move(edge: .leading).combined(with: .opacity))
                                 }
 
-                                VideoThumbnailView(url: video.fileURL)
+                                VideoThumbnailView(
+                                    url: video.fileURL,
+                                    progress: videoProgress(video)
+                                )
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(video.name)
@@ -58,6 +63,25 @@ struct ContentView: View {
                                     }
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+
+                                    if video.isProcessingHaptics {
+                                        HStack(spacing: 4) {
+                                            ProgressView()
+                                                .controlSize(.mini)
+                                            Text(video.hapticStatus?.displayLabel ?? "Processing...")
+                                                .font(.caption2)
+                                                .foregroundStyle(.orange)
+                                            if let progress = video.hapticProgress, progress > 0 {
+                                                Text("\(Int(progress))%")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.orange)
+                                            }
+                                        }
+                                    } else if video.hasHaptics {
+                                        Label("Haptics Ready", systemImage: "waveform.path")
+                                            .font(.caption2)
+                                            .foregroundStyle(.green)
+                                    }
                                 }
                                 Spacer(minLength: 0)
                             }
@@ -106,6 +130,14 @@ struct ContentView: View {
                                         Image(systemName: "pencil.and.outline")
                                     }
                                     .tint(.orange)
+                                    if !video.hasHaptics && !video.isProcessingHaptics {
+                                        Button {
+                                            hapticManager.startAnalysis(for: video, in: videoStore)
+                                        } label: {
+                                            Image(systemName: "waveform.path")
+                                        }
+                                        .tint(.purple)
+                                    }
                                 }
                             }
                         }
@@ -139,6 +171,11 @@ struct ContentView: View {
                     }
                 } else {
                     ToolbarItem(placement: .topBarTrailing) {
+                        NavigationLink(destination: SettingsView()) {
+                            Image(systemName: "gearshape")
+                        }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
                         Menu {
                             Button {
                                 showingPhotoPicker = true
@@ -169,6 +206,32 @@ struct ContentView: View {
                             }
                             if let position = video.lastPlaybackPosition, position > 0 {
                                 LabeledContent("Resume At", value: formatDuration(position))
+                            }
+                        }
+
+                        Section("Haptics") {
+                            if video.hasHaptics {
+                                LabeledContent("Status", value: "Ready")
+                                Button("Regenerate Haptics", systemImage: "arrow.clockwise") {
+                                    videoStore.clearHapticData(for: video.id)
+                                    hapticManager.startAnalysis(for: video, in: videoStore)
+                                    selectedVideoForInfo = nil
+                                }
+                                Button("Delete Haptics", systemImage: "trash", role: .destructive) {
+                                    videoStore.clearHapticData(for: video.id)
+                                    selectedVideoForInfo = nil
+                                }
+                            } else if video.isProcessingHaptics {
+                                LabeledContent("Status", value: video.hapticStatus?.displayLabel ?? "Processing")
+                                if let progress = video.hapticProgress {
+                                    ProgressView(value: progress, total: 100)
+                                }
+                            } else {
+                                LabeledContent("Status", value: "Not Generated")
+                                Button("Generate Haptics", systemImage: "waveform.path") {
+                                    hapticManager.startAnalysis(for: video, in: videoStore)
+                                    selectedVideoForInfo = nil
+                                }
                             }
                         }
                     }
@@ -235,6 +298,18 @@ struct ContentView: View {
                     videoToRename = nil
                 }
             }
+            .alert("Haptic Analysis Error", isPresented: $showHapticError) {
+                Button("OK", role: .cancel) {
+                    hapticManager.activeError = nil
+                }
+            } message: {
+                Text(hapticManager.activeError ?? "An unknown error occurred.")
+            }
+            .onChange(of: hapticManager.activeError) { _, newValue in
+                if newValue != nil {
+                    showHapticError = true
+                }
+            }
         }
     }
 
@@ -244,6 +319,14 @@ struct ContentView: View {
         } else {
             selectedVideos.insert(video.id)
         }
+    }
+
+    private func videoProgress(_ video: VideoItem) -> Double? {
+        guard let position = video.lastPlaybackPosition, position > 0,
+              let duration = video.duration, duration > 0 else {
+            return nil
+        }
+        return position / duration
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
