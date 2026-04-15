@@ -21,7 +21,7 @@ enum APIError: LocalizedError {
 actor HapticAPIClient {
     static let shared = HapticAPIClient()
 
-    private let baseURL = URL(string: "http://localhost:8000/api/v1")!
+    private let baseURL = URL(string: "http://192.168.1.5:8000/api/v1")!
     private let apiKey: String? = nil
     private let session: URLSession
 

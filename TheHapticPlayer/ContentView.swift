@@ -165,10 +165,17 @@ struct ContentView: View {
     private var toolbarContent: some ToolbarContent {
         if isSelecting {
             ToolbarItem(placement: .topBarLeading) {
-                Button("Cancel") {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        isSelecting = false
-                        selectedVideos.removeAll()
+                HStack(spacing: 16) {
+                    Button("Cancel") {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            isSelecting = false
+                            selectedVideos.removeAll()
+                        }
+                    }
+                    Button("Select All") {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedVideos = Set(filteredVideos.map(\.id))
+                        }
                     }
                 }
             }
@@ -605,10 +612,16 @@ struct SmoothProgressOverlay: View {
         return Self.labels[idx]
     }
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var progressColor: Color {
+        colorScheme == .light ? .black : .gray
+    }
+
     var body: some View {
         VStack(spacing: 10) {
             ProgressView(value: displayedProgress, total: 100)
-                .tint(.gray)
+                .tint(progressColor)
             HStack(spacing: 6) {
                 if !completed {
                     ProgressView()
@@ -623,7 +636,7 @@ struct SmoothProgressOverlay: View {
                     .fontWeight(.semibold)
                     .contentTransition(.numericText())
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(progressColor)
             .animation(.easeInOut(duration: 0.3), value: currentStage)
             .animation(.easeInOut(duration: 0.3), value: completed)
         }
@@ -721,22 +734,25 @@ struct ShimmerView: View {
     @State private var endPoint: UnitPoint = .init(x: 0, y: 0.5)
 
     var body: some View {
-        LinearGradient(
-            stops: [
-                .init(color: .clear, location: 0),
-                .init(color: .white.opacity(0.5), location: 0.4),
-                .init(color: .white.opacity(0.7), location: 0.5),
-                .init(color: .white.opacity(0.5), location: 0.6),
-                .init(color: .clear, location: 1.0),
-            ],
-            startPoint: startPoint,
-            endPoint: endPoint
-        )
-        .onAppear {
-            withAnimation(.easeOut(duration: 0.4)) {
-                startPoint = .init(x: 1, y: 0.5)
-                endPoint = .init(x: 1.5, y: 0.5)
+        Rectangle()
+            .fill(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .white.opacity(0.5), location: 0.4),
+                        .init(color: .white.opacity(0.7), location: 0.5),
+                        .init(color: .white.opacity(0.5), location: 0.6),
+                        .init(color: .clear, location: 1.0),
+                    ],
+                    startPoint: startPoint,
+                    endPoint: endPoint
+                )
+            )
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.4)) {
+                    startPoint = .init(x: 1, y: 0.5)
+                    endPoint = .init(x: 1.5, y: 0.5)
+                }
             }
-        }
     }
 }
