@@ -101,7 +101,12 @@ struct ContentView: View {
                 Text(hapticManager.activeError ?? "An unknown error occurred.")
             }
             .onChange(of: hapticManager.activeError) { _, newValue in
-                if newValue != nil { showHapticError = true }
+                if newValue != nil {
+                    showHapticError = true
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        shimmeringVideos.removeAll()
+                    }
+                }
             }
             .onChange(of: videoStore.videos.count) { oldCount, newCount in
                 if newCount > oldCount { handleNewVideos() }
@@ -116,13 +121,15 @@ struct ContentView: View {
 
     private var videoList: some View {
         List {
-            ForEach(filteredVideos) { video in
+            ForEach(Array(filteredVideos.enumerated()), id: \.element.id) { index, video in
                 VideoRowView(
                     video: video,
                     isSelecting: isSelecting,
                     isSelected: selectedVideos.contains(video.id),
                     isBlurred: video.isProcessingHaptics || animatingVideos.contains(video.id),
-                    isShimmering: shimmeringVideos.contains(video.id),
+                    isShimmering: shimmeringVideos.contains(video.id) && !video.isProcessingHaptics,
+                    isFirst: index == 0,
+                    isLast: index == filteredVideos.count - 1,
                     onTap: { handleTap(video) },
                     onLongPress: { handleLongPress(video) },
                     onAnimationStarted: { animatingVideos.insert(video.id) },
@@ -132,7 +139,7 @@ struct ContentView: View {
                         }
                     }
                 )
-                .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                .listRowInsets(EdgeInsets())
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     if !isSelecting && !video.isProcessingHaptics {
                         Button(role: .destructive) { videoToDelete = video } label: {
@@ -231,34 +238,31 @@ struct ContentView: View {
         let newVideos = videoStore.videos.filter { !knownVideoIds.contains($0.id) }
         guard !newVideos.isEmpty else { return }
 
-        // Mark as known immediately so they won't be picked up again
         for video in newVideos {
             knownVideoIds.insert(video.id)
             shimmeringVideos.insert(video.id)
         }
 
-        // After shimmer plays, transition to blur + start analysis
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            Task {
-                let serverUp = (try? await HapticAPIClient.shared.healthCheck()) ?? false
-                await MainActor.run {
+        // Start upload immediately — shimmer runs until server responds
+        Task {
+            let serverUp = (try? await HapticAPIClient.shared.healthCheck()) ?? false
+            await MainActor.run {
+                if serverUp {
+                    for video in newVideos {
+                        hapticManager.startAnalysis(for: video, in: videoStore)
+                    }
+                } else {
                     withAnimation(.easeInOut(duration: 0.4)) {
                         for video in newVideos {
                             shimmeringVideos.remove(video.id)
                         }
                     }
-                    if serverUp {
-                        for video in newVideos {
-                            hapticManager.startAnalysis(for: video, in: videoStore)
+                    for video in newVideos {
+                        if let index = videoStore.videos.firstIndex(where: { $0.id == video.id }) {
+                            videoStore.deleteVideo(at: IndexSet(integer: index))
                         }
-                    } else {
-                        for video in newVideos {
-                            if let index = videoStore.videos.firstIndex(where: { $0.id == video.id }) {
-                                videoStore.deleteVideo(at: IndexSet(integer: index))
-                            }
-                        }
-                        hapticManager.activeError = "Cannot connect to haptic server. Video was not added."
                     }
+                    hapticManager.activeError = "Cannot connect to haptic server. Video was not added."
                 }
             }
         }
@@ -299,6 +303,7 @@ struct ContentView: View {
         videoStore.clearHapticData(for: video.id)
         withAnimation(.easeInOut(duration: 0.4)) {
             animatingVideos.remove(video.id)
+            shimmeringVideos.remove(video.id)
             videoToCancel = nil
         }
     }
@@ -360,24 +365,27 @@ struct VideoRowView: View {
     let isSelected: Bool
     let isBlurred: Bool
     let isShimmering: Bool
+    let isFirst: Bool
+    let isLast: Bool
     let onTap: () -> Void
     let onLongPress: () -> Void
     let onAnimationStarted: () -> Void
     let onAnimationFinished: () -> Void
+
+    private var shimmerShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: isFirst ? 10 : 0,
+            bottomLeadingRadius: isLast ? 10 : 0,
+            bottomTrailingRadius: isLast ? 10 : 0,
+            topTrailingRadius: isFirst ? 10 : 0
+        )
+    }
 
     var body: some View {
         ZStack {
             rowContent
                 .opacity(isBlurred ? 0.3 : 1.0)
                 .blur(radius: isBlurred ? 2 : 0)
-                .overlay {
-                    if isShimmering {
-                        ShimmerView()
-                            .id(video.id)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .allowsHitTesting(false)
-                    }
-                }
 
             if isBlurred {
                 SmoothProgressOverlay(
@@ -385,6 +393,15 @@ struct VideoRowView: View {
                     onFinished: onAnimationFinished
                 )
                 .onAppear { onAnimationStarted() }
+            }
+        }
+        .padding(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+        .overlay {
+            if isShimmering {
+                ShimmerView()
+                    .id(video.id)
+                    .clipShape(shimmerShape)
+                    .allowsHitTesting(false)
             }
         }
         .animation(.easeInOut(duration: 0.4), value: isBlurred)
@@ -749,7 +766,7 @@ struct ShimmerView: View {
                 )
             )
             .onAppear {
-                withAnimation(.easeOut(duration: 0.4)) {
+                withAnimation(.easeOut(duration: 0.8).repeatForever(autoreverses: false)) {
                     startPoint = .init(x: 1, y: 0.5)
                     endPoint = .init(x: 1.5, y: 0.5)
                 }
