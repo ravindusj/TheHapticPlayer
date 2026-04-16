@@ -26,93 +26,64 @@ struct ContentView: View {
         return videoStore.videos.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
     }
 
+    var processingVideoIds: Set<UUID> {
+        Set(videoStore.videos.filter(\.isProcessingHaptics).map(\.id))
+    }
+
     var body: some View {
         NavigationStack {
-            Group {
-                if videoStore.videos.isEmpty {
-                    ContentUnavailableView(
-                        "No Videos",
-                        systemImage: "film",
-                        description: Text("Tap + to add videos from your library or files.")
-                    )
-                } else if filteredVideos.isEmpty {
-                    ContentUnavailableView.search(text: searchText)
-                } else {
-                    videoList
+            mainContent
+                .animation(.easeInOut(duration: 0.25), value: isSelecting)
+                .searchable(text: $searchText, prompt: "Search videos")
+                .navigationDestination(item: $selectedVideoForPlay) { video in
+                    VideoPlayerView(video: video)
                 }
-            }
-            .animation(.easeInOut(duration: 0.25), value: isSelecting)
-            .searchable(text: $searchText, prompt: "Search videos")
-            .navigationDestination(item: $selectedVideoForPlay) { video in
-                VideoPlayerView(video: video)
-            }
-            .navigationTitle("TheHaptic Player")
-            .toolbar { toolbarContent }
-            .sheet(item: $selectedVideoForInfo) { video in
-                VideoInfoSheet(
-                    video: video,
-                    dismiss: { selectedVideoForInfo = nil }
+                .navigationTitle("TheHaptic Player")
+                .toolbar { toolbarContent }
+                .sheet(item: $selectedVideoForInfo) { video in
+                    VideoInfoSheet(video: video, dismiss: { selectedVideoForInfo = nil })
+                }
+                .sheet(isPresented: $showingPhotoPicker) { PhotoPickerView() }
+                .sheet(isPresented: $showingDocumentPicker) { DocumentPickerView() }
+        }
+        .modifier(ContentViewAlerts(
+            selectedVideos: $selectedVideos,
+            showBatchDeleteConfirm: $showBatchDeleteConfirm,
+            videoToDelete: $videoToDelete,
+            videoToRename: $videoToRename,
+            renameText: $renameText,
+            showCancelConfirm: $showCancelConfirm,
+            videoToCancel: $videoToCancel,
+            showHapticError: $showHapticError,
+            shimmeringVideos: $shimmeringVideos,
+            batchDelete: batchDelete,
+            deleteSingle: deleteSingle,
+            renameSave: renameSave,
+            cancelAnalysis: cancelAnalysis
+        ))
+        .onChange(of: videoStore.videos.count) { oldCount, newCount in
+            if newCount > oldCount { handleNewVideos() }
+        }
+        .onChange(of: processingVideoIds) { _, _ in
+            fadeOutShimmers()
+        }
+        .onAppear {
+            knownVideoIds = Set(videoStore.videos.map(\.id))
+        }
+    }
+
+    private var mainContent: some View {
+        Group {
+            if videoStore.videos.isEmpty {
+                ContentUnavailableView(
+                    "No Videos",
+                    systemImage: "film",
+                    description: Text("Tap + to add videos from your library or files.")
                 )
-            }
-            .sheet(isPresented: $showingPhotoPicker) {
-                PhotoPickerView()
-            }
-            .sheet(isPresented: $showingDocumentPicker) {
-                DocumentPickerView()
-            }
-            .alert("Delete \(selectedVideos.count) Video\(selectedVideos.count == 1 ? "" : "s")?", isPresented: $showBatchDeleteConfirm) {
-                Button("Cancel", role: .cancel) {}
-                Button("Delete", role: .destructive) {
-                    batchDelete()
-                }
-            } message: {
-                Text("\(selectedVideos.count) video\(selectedVideos.count == 1 ? "" : "s") will be permanently deleted.")
-            }
-            .alert("Delete Video", isPresented: Binding(
-                get: { videoToDelete != nil },
-                set: { if !$0 { videoToDelete = nil } }
-            )) {
-                Button("Cancel", role: .cancel) { videoToDelete = nil }
-                Button("Delete", role: .destructive) { deleteSingle() }
-            } message: {
-                if let video = videoToDelete {
-                    Text("\"\(video.name)\" will be permanently deleted.")
-                }
-            }
-            .alert("Rename Video", isPresented: Binding(
-                get: { videoToRename != nil },
-                set: { if !$0 { videoToRename = nil } }
-            )) {
-                TextField("Video name", text: $renameText)
-                Button("Cancel", role: .cancel) { videoToRename = nil }
-                Button("Save") { renameSave() }
-            }
-            .alert("Cancel Task?", isPresented: $showCancelConfirm) {
-                Button("Keep Analysing", role: .cancel) {}
-                Button("Cancel", role: .destructive) { cancelAnalysis() }
-            } message: {
-                if let video = videoToCancel {
-                    Text("Stop haptic analysis for \"\(video.name)\"? The video will be kept.")
-                }
-            }
-            .alert("Haptic Analysis Error", isPresented: $showHapticError) {
-                Button("OK", role: .cancel) { hapticManager.activeError = nil }
-            } message: {
-                Text(hapticManager.activeError ?? "An unknown error occurred.")
-            }
-            .onChange(of: hapticManager.activeError) { _, newValue in
-                if newValue != nil {
-                    showHapticError = true
-                    withAnimation(.easeInOut(duration: 0.4)) {
-                        shimmeringVideos.removeAll()
-                    }
-                }
-            }
-            .onChange(of: videoStore.videos.count) { oldCount, newCount in
-                if newCount > oldCount { handleNewVideos() }
-            }
-            .onAppear {
-                knownVideoIds = Set(videoStore.videos.map(\.id))
+            } else if filteredVideos.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+            } else {
+                videoList
             }
         }
     }
@@ -127,7 +98,7 @@ struct ContentView: View {
                     isSelecting: isSelecting,
                     isSelected: selectedVideos.contains(video.id),
                     isBlurred: video.isProcessingHaptics || animatingVideos.contains(video.id),
-                    isShimmering: shimmeringVideos.contains(video.id) && !video.isProcessingHaptics,
+                    isShimmering: shimmeringVideos.contains(video.id),
                     isFirst: index == 0,
                     isLast: index == filteredVideos.count - 1,
                     onTap: { handleTap(video) },
@@ -293,6 +264,16 @@ struct ContentView: View {
             withAnimation(.easeInOut(duration: 0.25)) {
                 isSelecting = true
                 selectedVideos = [video.id]
+            }
+        }
+    }
+
+    private func fadeOutShimmers() {
+        let started = shimmeringVideos.intersection(processingVideoIds)
+        guard !started.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            withAnimation(.easeInOut(duration: 0.5)) {
+                shimmeringVideos.subtract(started)
             }
         }
     }
@@ -769,6 +750,75 @@ struct ShimmerView: View {
                 withAnimation(.easeOut(duration: 0.8).repeatForever(autoreverses: false)) {
                     startPoint = .init(x: 1, y: 0.5)
                     endPoint = .init(x: 1.5, y: 0.5)
+                }
+            }
+    }
+}
+
+// MARK: - Alerts Modifier
+
+struct ContentViewAlerts: ViewModifier {
+    @Binding var selectedVideos: Set<UUID>
+    @Binding var showBatchDeleteConfirm: Bool
+    @Binding var videoToDelete: VideoItem?
+    @Binding var videoToRename: VideoItem?
+    @Binding var renameText: String
+    @Binding var showCancelConfirm: Bool
+    @Binding var videoToCancel: VideoItem?
+    @Binding var showHapticError: Bool
+    @Binding var shimmeringVideos: Set<UUID>
+    var batchDelete: () -> Void
+    var deleteSingle: () -> Void
+    var renameSave: () -> Void
+    var cancelAnalysis: () -> Void
+    @Environment(HapticAnalysisManager.self) var hapticManager
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Delete \(selectedVideos.count) Video\(selectedVideos.count == 1 ? "" : "s")?", isPresented: $showBatchDeleteConfirm) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) { batchDelete() }
+            } message: {
+                Text("\(selectedVideos.count) video\(selectedVideos.count == 1 ? "" : "s") will be permanently deleted.")
+            }
+            .alert("Delete Video", isPresented: Binding(
+                get: { videoToDelete != nil },
+                set: { if !$0 { videoToDelete = nil } }
+            )) {
+                Button("Cancel", role: .cancel) { videoToDelete = nil }
+                Button("Delete", role: .destructive) { deleteSingle() }
+            } message: {
+                if let video = videoToDelete {
+                    Text("\"\(video.name)\" will be permanently deleted.")
+                }
+            }
+            .alert("Rename Video", isPresented: Binding(
+                get: { videoToRename != nil },
+                set: { if !$0 { videoToRename = nil } }
+            )) {
+                TextField("Video name", text: $renameText)
+                Button("Cancel", role: .cancel) { videoToRename = nil }
+                Button("Save") { renameSave() }
+            }
+            .alert("Cancel Task?", isPresented: $showCancelConfirm) {
+                Button("Keep Analysing", role: .cancel) {}
+                Button("Cancel", role: .destructive) { cancelAnalysis() }
+            } message: {
+                if let video = videoToCancel {
+                    Text("Stop haptic analysis for \"\(video.name)\"? The video will be kept.")
+                }
+            }
+            .alert("Haptic Analysis Error", isPresented: $showHapticError) {
+                Button("OK", role: .cancel) { hapticManager.activeError = nil }
+            } message: {
+                Text(hapticManager.activeError ?? "An unknown error occurred.")
+            }
+            .onChange(of: hapticManager.activeError) { _, newValue in
+                if newValue != nil {
+                    showHapticError = true
+                    withAnimation(.easeInOut(duration: 0.4)) {
+                        shimmeringVideos.removeAll()
+                    }
                 }
             }
     }
