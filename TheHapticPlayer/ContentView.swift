@@ -19,7 +19,12 @@ struct ContentView: View {
     @State private var shimmeringVideos: Set<UUID> = []
     @State private var videoToCancel: VideoItem?
     @State private var showCancelConfirm = false
+    @State private var cancelMode: CancelMode = .analysis
     @State private var knownVideoIds: Set<UUID> = []
+
+    enum CancelMode {
+        case upload, analysis
+    }
 
     var filteredVideos: [VideoItem] {
         if searchText.isEmpty { return videoStore.videos }
@@ -56,6 +61,7 @@ struct ContentView: View {
             videoToCancel: $videoToCancel,
             showHapticError: $showHapticError,
             shimmeringVideos: $shimmeringVideos,
+            cancelMode: cancelMode,
             batchDelete: batchDelete,
             deleteSingle: deleteSingle,
             renameSave: renameSave,
@@ -240,7 +246,9 @@ struct ContentView: View {
     }
 
     private func handleTap(_ video: VideoItem) {
-        guard !video.isProcessingHaptics, !animatingVideos.contains(video.id) else { return }
+        guard !video.isProcessingHaptics,
+              !animatingVideos.contains(video.id),
+              !shimmeringVideos.contains(video.id) else { return }
         if isSelecting {
             withAnimation(.easeInOut(duration: 0.2)) {
                 if selectedVideos.contains(video.id) {
@@ -256,7 +264,15 @@ struct ContentView: View {
 
     private func handleLongPress(_ video: VideoItem) {
         guard !isSelecting else { return }
-        if video.isProcessingHaptics || animatingVideos.contains(video.id) {
+        let isUploading = shimmeringVideos.contains(video.id) && !video.isProcessingHaptics
+        let isAnalysing = video.isProcessingHaptics || animatingVideos.contains(video.id)
+        if isUploading {
+            cancelMode = .upload
+            withAnimation(.easeInOut(duration: 0.25)) {
+                videoToCancel = video
+            }
+        } else if isAnalysing {
+            cancelMode = .analysis
             withAnimation(.easeInOut(duration: 0.25)) {
                 videoToCancel = video
             }
@@ -280,12 +296,22 @@ struct ContentView: View {
 
     private func cancelAnalysis() {
         guard let video = videoToCancel else { return }
+        let mode = cancelMode
         hapticManager.cancelAnalysis(for: video.id)
-        videoStore.clearHapticData(for: video.id)
         withAnimation(.easeInOut(duration: 0.4)) {
             animatingVideos.remove(video.id)
             shimmeringVideos.remove(video.id)
             videoToCancel = nil
+        }
+        if mode == .upload {
+            // Upload cancelled — remove video entirely
+            knownVideoIds.remove(video.id)
+            if let index = videoStore.videos.firstIndex(where: { $0.id == video.id }) {
+                videoStore.deleteVideo(at: IndexSet(integer: index))
+            }
+        } else {
+            // Analysis cancelled — keep video, just clear haptic data
+            videoStore.clearHapticData(for: video.id)
         }
     }
 
@@ -728,28 +754,45 @@ struct SmoothProgressOverlay: View {
 // MARK: - Shimmer
 
 struct ShimmerView: View {
-    @State private var startPoint: UnitPoint = .init(x: -0.5, y: 0.5)
-    @State private var endPoint: UnitPoint = .init(x: 0, y: 0.5)
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var startPoint: UnitPoint = .init(x: -0.8, y: 0.35)
+    @State private var endPoint: UnitPoint = .init(x: -0.1, y: 0.65)
+
+    private var peakOpacity: Double {
+        colorScheme == .dark ? 0.32 : 0.8
+    }
+
+    private var glowOpacity: Double {
+        colorScheme == .dark ? 0.16 : 0.42
+    }
+
+    private var softOpacity: Double {
+        colorScheme == .dark ? 0.06 : 0.16
+    }
 
     var body: some View {
         Rectangle()
             .fill(
                 LinearGradient(
                     stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .white.opacity(0.5), location: 0.4),
-                        .init(color: .white.opacity(0.7), location: 0.5),
-                        .init(color: .white.opacity(0.5), location: 0.6),
-                        .init(color: .clear, location: 1.0),
+                        .init(color: .white.opacity(0), location: 0.0),
+                        .init(color: .white.opacity(softOpacity), location: 0.2),
+                        .init(color: .white.opacity(glowOpacity), location: 0.4),
+                        .init(color: .white.opacity(peakOpacity), location: 0.5),
+                        .init(color: .white.opacity(glowOpacity), location: 0.6),
+                        .init(color: .white.opacity(softOpacity), location: 0.8),
+                        .init(color: .white.opacity(0), location: 1.0),
                     ],
                     startPoint: startPoint,
                     endPoint: endPoint
                 )
             )
             .onAppear {
-                withAnimation(.easeOut(duration: 0.8).repeatForever(autoreverses: false)) {
-                    startPoint = .init(x: 1, y: 0.5)
-                    endPoint = .init(x: 1.5, y: 0.5)
+                withAnimation(
+                    .easeInOut(duration: 1.2).repeatForever(autoreverses: false)
+                ) {
+                    startPoint = .init(x: 1.1, y: 0.35)
+                    endPoint = .init(x: 1.8, y: 0.65)
                 }
             }
     }
@@ -767,6 +810,7 @@ struct ContentViewAlerts: ViewModifier {
     @Binding var videoToCancel: VideoItem?
     @Binding var showHapticError: Bool
     @Binding var shimmeringVideos: Set<UUID>
+    var cancelMode: ContentView.CancelMode
     var batchDelete: () -> Void
     var deleteSingle: () -> Void
     var renameSave: () -> Void
@@ -800,12 +844,16 @@ struct ContentViewAlerts: ViewModifier {
                 Button("Cancel", role: .cancel) { videoToRename = nil }
                 Button("Save") { renameSave() }
             }
-            .alert("Cancel Task?", isPresented: $showCancelConfirm) {
-                Button("Keep Analysing", role: .cancel) {}
+            .alert(cancelMode == .upload ? "Cancel Upload?" : "Cancel Analysis?", isPresented: $showCancelConfirm) {
+                Button(cancelMode == .upload ? "Keep Uploading" : "Keep Analysing", role: .cancel) {}
                 Button("Cancel", role: .destructive) { cancelAnalysis() }
             } message: {
                 if let video = videoToCancel {
-                    Text("Stop haptic analysis for \"\(video.name)\"? The video will be kept.")
+                    if cancelMode == .upload {
+                        Text("Stop uploading \"\(video.name)\"? The video will be removed.")
+                    } else {
+                        Text("Stop haptic analysis for \"\(video.name)\"? The video will be kept.")
+                    }
                 }
             }
             .alert("Haptic Analysis Error", isPresented: $showHapticError) {

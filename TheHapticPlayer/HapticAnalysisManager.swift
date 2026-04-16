@@ -5,6 +5,7 @@ class HapticAnalysisManager {
     var activeError: String?
 
     private var pollingTasks: [UUID: Task<Void, Never>] = [:]
+    private var uploadTasks: [UUID: Task<Void, Never>] = [:]
     private let apiClient = HapticAPIClient.shared
     private let maxRetries = 5
 
@@ -15,9 +16,11 @@ class HapticAnalysisManager {
         style: String = "auto",
         bassBoost: Float = 1.0
     ) {
+        uploadTasks[video.id]?.cancel()
         pollingTasks[video.id]?.cancel()
 
-        Task {
+        let videoId = video.id
+        uploadTasks[videoId] = Task {
             do {
                 let response = try await apiClient.analyzeVideo(
                     fileURL: video.fileURL,
@@ -26,28 +29,42 @@ class HapticAnalysisManager {
                     bassBoost: bassBoost
                 )
 
+                if Task.isCancelled {
+                    uploadTasks[videoId] = nil
+                    return
+                }
+
                 await MainActor.run {
                     store.updateHapticStatus(
-                        for: video.id,
+                        for: videoId,
                         jobId: response.jobId,
                         status: .queued,
                         progress: 0
                     )
                 }
 
-                startPolling(videoId: video.id, jobId: response.jobId, store: store)
+                uploadTasks[videoId] = nil
+                startPolling(videoId: videoId, jobId: response.jobId, store: store)
             } catch {
+                uploadTasks[videoId] = nil
+                if Task.isCancelled { return }
                 await MainActor.run {
                     self.activeError = error.localizedDescription
-                    store.clearHapticData(for: video.id)
+                    store.clearHapticData(for: videoId)
                 }
             }
         }
     }
 
     func cancelAnalysis(for videoId: UUID) {
+        uploadTasks[videoId]?.cancel()
+        uploadTasks[videoId] = nil
         pollingTasks[videoId]?.cancel()
         pollingTasks[videoId] = nil
+    }
+
+    func isUploading(_ videoId: UUID) -> Bool {
+        uploadTasks[videoId] != nil
     }
 
     func resumeIncompleteJobs(in store: VideoStore) {
