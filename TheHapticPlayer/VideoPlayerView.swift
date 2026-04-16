@@ -33,7 +33,6 @@ struct VideoPlayerView: View {
             .onAppear {
                 UIDevice.current.beginGeneratingDeviceOrientationNotifications()
                 let avPlayer = AVPlayer(url: video.fileURL)
-                avPlayer.rate = Float(defaultPlaybackSpeed)
                 player = avPlayer
 
                 // Load haptics if available
@@ -53,6 +52,7 @@ struct VideoPlayerView: View {
                         avPlayer.play()
                         avPlayer.rate = Float(defaultPlaybackSpeed)
                     } else {
+                        avPlayer.pause()
                         resumePosition = position
                         showResumeAlert = true
                     }
