@@ -39,10 +39,11 @@ struct ContentView: View {
         NavigationStack {
             mainContent
                 .animation(.easeInOut(duration: 0.25), value: isSelecting)
-                .searchable(text: $searchText, prompt: "Search videos")
-                .navigationDestination(item: $selectedVideoForPlay) { video in
-                    VideoPlayerView(video: video)
-                }
+                .searchable(text: $searchText, prompt: "TheHaptic Player")
+                .background(
+                    PlayerPresenter(video: $selectedVideoForPlay, videoStore: videoStore)
+                        .frame(width: 0, height: 0)
+                )
                 .navigationTitle("TheHaptic Player")
                 .toolbar { toolbarContent }
                 .sheet(item: $selectedVideoForInfo) { video in
