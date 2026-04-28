@@ -8,8 +8,6 @@ struct ContentView: View {
     @State private var selectedVideoForInfo: VideoItem?
     @State private var selectedVideoForPlay: VideoItem?
     @State private var searchText = ""
-    @State private var videoToRename: VideoItem?
-    @State private var renameText = ""
     @State private var videoToDelete: VideoItem?
     @State private var isSelecting = false
     @State private var selectedVideos: Set<UUID> = []
@@ -47,7 +45,7 @@ struct ContentView: View {
                 .navigationTitle("TheHaptic Player")
                 .toolbar { toolbarContent }
                 .sheet(item: $selectedVideoForInfo) { video in
-                    VideoInfoSheet(video: video, dismiss: { selectedVideoForInfo = nil })
+                    VideoInfoSheet(videoID: video.id, dismiss: { selectedVideoForInfo = nil })
                 }
                 .sheet(isPresented: $showingPhotoPicker) { PhotoPickerView() }
                 .sheet(isPresented: $showingDocumentPicker) { DocumentPickerView() }
@@ -56,8 +54,6 @@ struct ContentView: View {
             selectedVideos: $selectedVideos,
             showBatchDeleteConfirm: $showBatchDeleteConfirm,
             videoToDelete: $videoToDelete,
-            videoToRename: $videoToRename,
-            renameText: $renameText,
             showCancelConfirm: $showCancelConfirm,
             videoToCancel: $videoToCancel,
             showHapticError: $showHapticError,
@@ -65,7 +61,6 @@ struct ContentView: View {
             cancelMode: cancelMode,
             batchDelete: batchDelete,
             deleteSingle: deleteSingle,
-            renameSave: renameSave,
             cancelAnalysis: cancelAnalysis
         ))
         .onChange(of: videoStore.videos.count) { oldCount, newCount in
@@ -131,13 +126,14 @@ struct ContentView: View {
                             Image(systemName: "info.circle")
                         }
                         .tint(.blue)
-                        Button {
-                            renameText = video.name
-                            videoToRename = video
-                        } label: {
-                            Image(systemName: "pencil.and.outline")
+                        if video.hasHaptics {
+                            Button {
+                                videoStore.toggleHapticsEnabled(for: video.id)
+                            } label: {
+                                Image(systemName: video.isHapticsEnabled ? "waveform.slash" : "waveform")
+                            }
+                            .tint(video.isHapticsEnabled ? .orange : .green)
                         }
-                        .tint(.orange)
                     }
                 }
             }
@@ -335,13 +331,6 @@ struct ContentView: View {
         videoToDelete = nil
     }
 
-    private func renameSave() {
-        if let video = videoToRename, !renameText.trimmingCharacters(in: .whitespaces).isEmpty {
-            videoStore.renameVideo(id: video.id, newName: renameText.trimmingCharacters(in: .whitespaces))
-        }
-        videoToRename = nil
-    }
-
     private func videoProgress(_ video: VideoItem) -> Double? {
         guard let position = video.lastPlaybackPosition, position > 0,
               let duration = video.duration, duration > 0 else { return nil }
@@ -484,16 +473,28 @@ struct VideoRowView: View {
 // MARK: - Video Info Sheet
 
 struct VideoInfoSheet: View {
-    let video: VideoItem
+    let videoID: UUID
     let dismiss: () -> Void
     @Environment(VideoStore.self) var videoStore
     @Environment(HapticAnalysisManager.self) var hapticManager
+    @State private var showingRename = false
+    @State private var renameText = ""
+
+    private var video: VideoItem? {
+        videoStore.videos.first { $0.id == videoID }
+    }
 
     var body: some View {
         NavigationStack {
-            List {
-                detailsSection
-                hapticsSection
+            Group {
+                if let video {
+                    List {
+                        detailsSection(video)
+                        hapticsSection(video)
+                    }
+                } else {
+                    ContentUnavailableView("Video Unavailable", systemImage: "film")
+                }
             }
             .navigationTitle("Video Info")
             .navigationBarTitleDisplayMode(.inline)
@@ -504,13 +505,18 @@ struct VideoInfoSheet: View {
             }
         }
         .presentationDetents([.medium])
+        .alert("Rename Video", isPresented: $showingRename) {
+            TextField("Video name", text: $renameText)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { saveRename() }
+        }
     }
 
-    private var detailsSection: some View {
+    private func detailsSection(_ video: VideoItem) -> some View {
         Section("Details") {
             LabeledContent("Name", value: video.name)
             LabeledContent("Added", value: video.dateAdded, format: .dateTime)
-            LabeledContent("File Size", value: fileSizeString)
+            LabeledContent("File Size", value: fileSizeString(video))
             LabeledContent("Format", value: video.fileName.components(separatedBy: ".").last?.uppercased() ?? "Unknown")
             if let duration = video.duration {
                 LabeledContent("Duration", value: formatDuration(duration))
@@ -518,10 +524,14 @@ struct VideoInfoSheet: View {
             if let position = video.lastPlaybackPosition, position > 0 {
                 LabeledContent("Resume At", value: formatDuration(position))
             }
+            Button("Rename", systemImage: "pencil") {
+                renameText = video.name
+                showingRename = true
+            }
         }
     }
 
-    private var hapticsSection: some View {
+    private func hapticsSection(_ video: VideoItem) -> some View {
         Section("Haptics") {
             if video.hasHaptics {
                 LabeledContent("Status", value: "Ready")
@@ -551,7 +561,13 @@ struct VideoInfoSheet: View {
         }
     }
 
-    private var fileSizeString: String {
+    private func saveRename() {
+        let trimmed = renameText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        videoStore.renameVideo(id: videoID, newName: trimmed)
+    }
+
+    private func fileSizeString(_ video: VideoItem) -> String {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: video.fileURL.path),
               let size = attrs[.size] as? Int64 else { return "Unknown" }
         let formatter = ByteCountFormatter()
@@ -805,8 +821,6 @@ struct ContentViewAlerts: ViewModifier {
     @Binding var selectedVideos: Set<UUID>
     @Binding var showBatchDeleteConfirm: Bool
     @Binding var videoToDelete: VideoItem?
-    @Binding var videoToRename: VideoItem?
-    @Binding var renameText: String
     @Binding var showCancelConfirm: Bool
     @Binding var videoToCancel: VideoItem?
     @Binding var showHapticError: Bool
@@ -814,7 +828,6 @@ struct ContentViewAlerts: ViewModifier {
     var cancelMode: ContentView.CancelMode
     var batchDelete: () -> Void
     var deleteSingle: () -> Void
-    var renameSave: () -> Void
     var cancelAnalysis: () -> Void
     @Environment(HapticAnalysisManager.self) var hapticManager
 
@@ -836,14 +849,6 @@ struct ContentViewAlerts: ViewModifier {
                 if let video = videoToDelete {
                     Text("\"\(video.name)\" will be permanently deleted.")
                 }
-            }
-            .alert("Rename Video", isPresented: Binding(
-                get: { videoToRename != nil },
-                set: { if !$0 { videoToRename = nil } }
-            )) {
-                TextField("Video name", text: $renameText)
-                Button("Cancel", role: .cancel) { videoToRename = nil }
-                Button("Save") { renameSave() }
             }
             .alert(cancelMode == .upload ? "Cancel Upload?" : "Cancel Analysis?", isPresented: $showCancelConfirm) {
                 Button(cancelMode == .upload ? "Keep Uploading" : "Keep Analysing", role: .cancel) {}

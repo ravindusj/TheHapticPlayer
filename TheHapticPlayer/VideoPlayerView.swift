@@ -99,7 +99,7 @@ struct PlayerPresenter: UIViewRepresentable {
             self.currentPlayer = avPlayer
             self.currentVideoID = video.id
 
-            if video.hasHaptics, let ahapURL = video.ahapFileURL {
+            if video.hasHaptics, video.isHapticsEnabled, let ahapURL = video.ahapFileURL {
                 do {
                     try hapticEngine.loadAHAP(from: ahapURL)
                     hapticEngine.attachToPlayer(avPlayer)

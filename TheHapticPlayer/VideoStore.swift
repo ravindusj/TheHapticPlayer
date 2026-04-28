@@ -88,6 +88,13 @@ class VideoStore {
         }
     }
 
+    func toggleHapticsEnabled(for videoID: UUID) {
+        if let index = videos.firstIndex(where: { $0.id == videoID }) {
+            videos[index].hapticsEnabled = !videos[index].isHapticsEnabled
+            save()
+        }
+    }
+
     func clearHapticData(for videoID: UUID) {
         if let index = videos.firstIndex(where: { $0.id == videoID }) {
             if let ahapURL = videos[index].ahapFileURL {

@@ -39,6 +39,7 @@ struct VideoItem: Identifiable, Codable, Hashable {
     var hapticStatus: HapticStatus?
     var hapticProgress: Double?
     var ahapFileName: String?
+    var hapticsEnabled: Bool?
 
     var fileURL: URL {
         VideoItem.videosDirectory.appendingPathComponent(fileName)
@@ -52,6 +53,10 @@ struct VideoItem: Identifiable, Codable, Hashable {
     var hasHaptics: Bool {
         guard let ahapFileURL else { return false }
         return FileManager.default.fileExists(atPath: ahapFileURL.path)
+    }
+
+    var isHapticsEnabled: Bool {
+        hapticsEnabled ?? true
     }
 
     var isProcessingHaptics: Bool {
