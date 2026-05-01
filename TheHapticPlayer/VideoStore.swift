@@ -88,11 +88,13 @@ class VideoStore {
         }
     }
 
-    func toggleHapticsEnabled(for videoID: UUID) {
-        if let index = videos.firstIndex(where: { $0.id == videoID }) {
-            videos[index].hapticsEnabled = !videos[index].isHapticsEnabled
-            save()
-        }
+    @discardableResult
+    func toggleHapticsEnabled(for videoID: UUID) -> Bool? {
+        guard let index = videos.firstIndex(where: { $0.id == videoID }) else { return nil }
+        let newValue = !videos[index].isHapticsEnabled
+        videos[index].hapticsEnabled = newValue
+        save()
+        return newValue
     }
 
     func clearHapticData(for videoID: UUID) {

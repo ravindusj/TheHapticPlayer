@@ -19,6 +19,8 @@ struct ContentView: View {
     @State private var showCancelConfirm = false
     @State private var cancelMode: CancelMode = .analysis
     @State private var knownVideoIds: Set<UUID> = []
+    @State private var toast: ToastState?
+    @State private var toastDismissTask: Task<Void, Never>?
 
     enum CancelMode {
         case upload, analysis
@@ -49,6 +51,9 @@ struct ContentView: View {
                 }
                 .sheet(isPresented: $showingPhotoPicker) { PhotoPickerView() }
                 .sheet(isPresented: $showingDocumentPicker) { DocumentPickerView() }
+                .overlay(alignment: .bottom) {
+                    ToastOverlay(toast: toast)
+                }
         }
         .modifier(ContentViewAlerts(
             selectedVideos: $selectedVideos,
@@ -115,9 +120,10 @@ struct ContentView: View {
                 .listRowInsets(EdgeInsets())
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     if !isSelecting && !video.isProcessingHaptics {
-                        Button(role: .destructive) { videoToDelete = video } label: {
+                        Button { videoToDelete = video } label: {
                             Image(systemName: "trash")
                         }
+                        .tint(.red)
                     }
                 }
                 .swipeActions(edge: .leading, allowsFullSwipe: false) {
@@ -128,9 +134,14 @@ struct ContentView: View {
                         .tint(.blue)
                         if video.hasHaptics {
                             Button {
-                                videoStore.toggleHapticsEnabled(for: video.id)
+                                if let nowEnabled = videoStore.toggleHapticsEnabled(for: video.id) {
+                                    showToast(
+                                        message: nowEnabled ? "Haptics Enabled" : "Haptics Disabled",
+                                        icon: nowEnabled ? "bolt.fill" : "bolt.slash.fill"
+                                    )
+                                }
                             } label: {
-                                Image(systemName: video.isHapticsEnabled ? "waveform.slash" : "waveform")
+                                Image(systemName: video.isHapticsEnabled ? "bolt.slash.fill" : "bolt.fill")
                             }
                             .tint(video.isHapticsEnabled ? .orange : .green)
                         }
@@ -309,6 +320,20 @@ struct ContentView: View {
         } else {
             // Analysis cancelled — keep video, just clear haptic data
             videoStore.clearHapticData(for: video.id)
+        }
+    }
+
+    private func showToast(message: String, icon: String) {
+        toastDismissTask?.cancel()
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+            toast = ToastState(message: message, icon: icon)
+        }
+        toastDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.6))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.25)) {
+                toast = nil
+            }
         }
     }
 
@@ -514,19 +539,25 @@ struct VideoInfoSheet: View {
 
     private func detailsSection(_ video: VideoItem) -> some View {
         Section("Details") {
-            LabeledContent("Name", value: video.name)
+            HStack {
+                Text("Name")
+                Spacer()
+                Text(video.name)
+                    .foregroundStyle(.secondary)
+                Button {
+                    renameText = video.name
+                    showingRename = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+            }
             LabeledContent("Added", value: video.dateAdded, format: .dateTime)
             LabeledContent("File Size", value: fileSizeString(video))
             LabeledContent("Format", value: video.fileName.components(separatedBy: ".").last?.uppercased() ?? "Unknown")
             if let duration = video.duration {
                 LabeledContent("Duration", value: formatDuration(duration))
-            }
-            if let position = video.lastPlaybackPosition, position > 0 {
-                LabeledContent("Resume At", value: formatDuration(position))
-            }
-            Button("Rename", systemImage: "pencil") {
-                renameText = video.name
-                showingRename = true
             }
         }
     }
@@ -540,9 +571,16 @@ struct VideoInfoSheet: View {
                     hapticManager.startAnalysis(for: video, in: videoStore)
                     dismiss()
                 }
-                Button("Delete Haptics", systemImage: "trash", role: .destructive) {
+                Button(role: .destructive) {
                     videoStore.clearHapticData(for: video.id)
                     dismiss()
+                } label: {
+                    Label {
+                        Text("Remove Haptics")
+                    } icon: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
                 }
             } else if video.isProcessingHaptics {
                 LabeledContent("Status", value: video.hapticStatus?.displayLabel ?? "Analysing")
@@ -875,5 +913,48 @@ struct ContentViewAlerts: ViewModifier {
                     }
                 }
             }
+    }
+}
+
+// MARK: - Toast
+
+struct ToastState: Equatable {
+    let id = UUID()
+    let message: String
+    let icon: String
+}
+
+struct ToastOverlay: View {
+    let toast: ToastState?
+
+    var body: some View {
+        ZStack {
+            if let toast {
+                HStack(spacing: 10) {
+                    Image(systemName: toast.icon)
+                        .font(.system(size: 15, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                    Text(toast.message)
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 11)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(
+                    Capsule().strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+                .padding(.bottom, 24)
+                .transition(
+                    .move(edge: .bottom)
+                        .combined(with: .opacity)
+                        .combined(with: .scale(scale: 0.92))
+                )
+                .id(toast.id)
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.78), value: toast)
+        .allowsHitTesting(false)
     }
 }

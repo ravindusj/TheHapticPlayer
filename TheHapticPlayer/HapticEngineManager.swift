@@ -31,6 +31,13 @@ class HapticEngineManager {
     private var activePlayer: CHHapticAdvancedPatternPlayer?
     private var currentChunkIndex: Int = -1
 
+    // Pre-rolled next chunk, scheduled to start at the upcoming boundary.
+    private var pendingPlayer: CHHapticAdvancedPatternPlayer?
+    private var pendingChunkIndex: Int = -1
+    private var pendingActivationMediaTime: TimeInterval = .infinity
+    // Outgoing player held briefly after promotion so its scheduled stop fires.
+    private var expiringPlayer: CHHapticAdvancedPatternPlayer?
+
     // AVPlayer sync
     private weak var avPlayer: AVPlayer?
     private var timeObserverToken: Any?
@@ -43,6 +50,12 @@ class HapticEngineManager {
     private var lastObservedRealTime: CFTimeInterval = 0
     private let seekDeltaThreshold: TimeInterval = 0.4
     private let chunkSwitchLeadIn: TimeInterval = 0.05
+    // Begin building the next chunk this far ahead of the boundary.
+    private let chunkPrerollLead: TimeInterval = 0.2
+    // How long to keep the outgoing chunk playing past the boundary so its
+    // tail (events whose EventDuration spans the boundary) crossfades with
+    // the incoming chunk's opening.
+    private let chunkOverlap: TimeInterval = 0.1
 
     static var supportsHaptics: Bool {
         CHHapticEngine.capabilitiesForHardware().supportsHaptics
@@ -140,6 +153,8 @@ class HapticEngineManager {
         rateObservation?.cancel()
         rateObservation = nil
         avPlayer = nil
+        cancelPendingPlayer()
+        expiringPlayer = nil
         stopActivePlayer()
         currentChunkIndex = -1
     }
@@ -178,6 +193,10 @@ class HapticEngineManager {
                     try self.engine?.start()
                     self.engineNeedsStart = false
                     self.activePlayer = nil
+                    self.pendingPlayer = nil
+                    self.pendingChunkIndex = -1
+                    self.pendingActivationMediaTime = .infinity
+                    self.expiringPlayer = nil
                     self.currentChunkIndex = -1
                     self.resumeIfPlaying()
                 } catch {
@@ -190,6 +209,10 @@ class HapticEngineManager {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.activePlayer = nil
+                self.pendingPlayer = nil
+                self.pendingChunkIndex = -1
+                self.pendingActivationMediaTime = .infinity
+                self.expiringPlayer = nil
                 self.currentChunkIndex = -1
                 self.engineNeedsStart = true
             }
@@ -240,9 +263,28 @@ class HapticEngineManager {
         let chunkIndex = chunkIndexFor(time: currentTime)
         guard chunkIndex >= 0 else { return }
 
-        if chunkIndex != currentChunkIndex || isSeek {
+        if isSeek {
+            cancelPendingPlayer()
             switchToChunk(chunkIndex, at: currentTime)
+            return
         }
+
+        // If a pre-rolled chunk's start time has elapsed in media time,
+        // promote it to active without re-issuing start() — it's already running.
+        if pendingPlayer != nil,
+           chunkIndex == pendingChunkIndex,
+           currentTime >= pendingActivationMediaTime {
+            promotePendingToActive()
+        }
+
+        if chunkIndex != currentChunkIndex {
+            // Pre-roll didn't happen (first chunk, or skipped). Hard switch.
+            cancelPendingPlayer()
+            switchToChunk(chunkIndex, at: currentTime)
+            return
+        }
+
+        maybePrerollNextChunk(currentTime: currentTime)
     }
 
     private func chunkIndexFor(time: TimeInterval) -> Int {
@@ -296,6 +338,72 @@ class HapticEngineManager {
         currentChunkIndex = chunkIndex
     }
 
+    private func maybePrerollNextChunk(currentTime: TimeInterval) {
+        guard pendingPlayer == nil,
+              currentChunkIndex >= 0,
+              currentChunkIndex + 1 < chunkPatterns.count,
+              let engine,
+              let avPlayer else { return }
+
+        let nextChunkIndex = currentChunkIndex + 1
+        let boundary = Double(nextChunkIndex) * chunkDuration
+        let timeToBoundary = boundary - currentTime
+        guard timeToBoundary > 0, timeToBoundary <= chunkPrerollLead else { return }
+
+        let rate = max(0.0625, Double(avPlayer.rate))
+        let realTimeToBoundary = timeToBoundary / rate
+
+        do {
+            try ensureEngineRunning()
+
+            let pattern = try CHHapticPattern(dictionary: chunkPatterns[nextChunkIndex])
+            let player = try engine.makeAdvancedPlayer(with: pattern)
+            player.loopEnabled = false
+            player.playbackRate = Float(rate)
+
+            let boundaryEngineTime = engine.currentTime + realTimeToBoundary
+            try player.start(atTime: boundaryEngineTime)
+
+            // Let the outgoing chunk keep playing past the boundary so events
+            // whose EventDuration straddles the boundary crossfade naturally
+            // with the incoming chunk's opening events.
+            try? activePlayer?.stop(atTime: boundaryEngineTime + chunkOverlap)
+
+            pendingPlayer = player
+            pendingChunkIndex = nextChunkIndex
+            pendingActivationMediaTime = boundary
+        } catch {
+            // Preroll failed — fall back to the hard-switch path at the boundary.
+            cancelPendingPlayer()
+        }
+    }
+
+    private func promotePendingToActive() {
+        guard let pending = pendingPlayer else { return }
+        // Hold the outgoing player until its scheduled stop fires; otherwise
+        // ARC could drop it before the engine processes the stop time.
+        expiringPlayer = activePlayer
+        activePlayer = pending
+        currentChunkIndex = pendingChunkIndex
+        pendingPlayer = nil
+        pendingChunkIndex = -1
+        pendingActivationMediaTime = .infinity
+
+        let releaseAfter = chunkOverlap + 0.1
+        DispatchQueue.main.asyncAfter(deadline: .now() + releaseAfter) { [weak self] in
+            self?.expiringPlayer = nil
+        }
+    }
+
+    private func cancelPendingPlayer() {
+        if let pending = pendingPlayer {
+            try? pending.stop(atTime: CHHapticTimeImmediate)
+        }
+        pendingPlayer = nil
+        pendingChunkIndex = -1
+        pendingActivationMediaTime = .infinity
+    }
+
     private func resumeIfPlaying() {
         guard isHapticEnabled,
               isLoaded,
@@ -310,6 +418,8 @@ class HapticEngineManager {
     }
 
     private func pauseHaptic() {
+        cancelPendingPlayer()
+        expiringPlayer = nil
         stopActivePlayer()
         // Force reload of the current chunk on resume so we re-seek to the exact AVPlayer position.
         currentChunkIndex = -1
@@ -323,6 +433,10 @@ class HapticEngineManager {
     private func applyPlaybackRate(_ rate: Float) {
         guard rate > 0 else { return }
         activePlayer?.playbackRate = max(0.0625, rate)
+        // The pending player's boundary time was computed at the previous rate,
+        // so it would now fire at the wrong moment. Cancel and let the next
+        // tick re-preroll under the new rate.
+        cancelPendingPlayer()
     }
 
     // MARK: - App / session lifecycle
