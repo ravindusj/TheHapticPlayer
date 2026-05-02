@@ -412,6 +412,7 @@ struct VideoRowView: View {
             if isBlurred {
                 SmoothProgressOverlay(
                     targetProgress: video.hapticProgress ?? 0,
+                    videoId: video.id,
                     onFinished: onAnimationFinished
                 )
                 .onAppear { onAnimationStarted() }
@@ -626,6 +627,7 @@ struct VideoInfoSheet: View {
 
 struct SmoothProgressOverlay: View {
     let targetProgress: Double
+    var videoId: UUID? = nil
     var onFinished: (() -> Void)?
 
     @State private var displayedProgress: Double = 0
@@ -734,7 +736,22 @@ struct SmoothProgressOverlay: View {
                 }
             }
         }
+        .onChange(of: Int(displayedProgress)) { _, newPercent in
+            syncToLiveActivity(percent: newPercent)
+        }
+        .onChange(of: stageLabel) { _, _ in
+            syncToLiveActivity(percent: Int(displayedProgress))
+        }
         .onDisappear { timer?.invalidate() }
+    }
+
+    private func syncToLiveActivity(percent: Int) {
+        guard let videoId else { return }
+        LiveActivityManager.shared.updateFromUI(
+            videoId: videoId,
+            progress: Double(percent),
+            label: stageLabel
+        )
     }
 
     private func advanceToNextStage() {

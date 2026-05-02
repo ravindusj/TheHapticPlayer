@@ -6,11 +6,58 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		96D854272FA5D125009900AA /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 96D854262FA5D125009900AA /* WidgetKit.framework */; };
+		96D854292FA5D125009900AA /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 96D854282FA5D125009900AA /* SwiftUI.framework */; };
+		96D854362FA5D126009900AA /* HapticActivityWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 96D854242FA5D125009900AA /* HapticActivityWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		96D854342FA5D126009900AA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 964032E82F89FC55009E54FA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 96D854232FA5D125009900AA;
+			remoteInfo = HapticActivityWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		96D8543B2FA5D126009900AA /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				96D854362FA5D126009900AA /* HapticActivityWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		964032F02F89FC55009E54FA /* TheHapticPlayer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TheHapticPlayer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		96D854242FA5D125009900AA /* HapticActivityWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HapticActivityWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		96D854262FA5D125009900AA /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		96D854282FA5D125009900AA /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		96D8543A2FA5D126009900AA /* Exceptions for "HapticActivityWidget" folder in "HapticActivityWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 96D854232FA5D125009900AA /* HapticActivityWidgetExtension */;
+		};
+		96D854432FA5D3A8009900AA /* Exceptions for "TheHapticPlayer" folder in "HapticActivityWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				HapticProcessingAttributes.swift,
+			);
+			target = 96D854232FA5D125009900AA /* HapticActivityWidgetExtension */;
+		};
 		96HAPTIC012F8AFC55009E54FA /* Exceptions for "TheHapticPlayer" folder in "TheHapticPlayer" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -25,8 +72,17 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				96HAPTIC012F8AFC55009E54FA /* Exceptions for "TheHapticPlayer" folder in "TheHapticPlayer" target */,
+				96D854432FA5D3A8009900AA /* Exceptions for "TheHapticPlayer" folder in "HapticActivityWidgetExtension" target */,
 			);
 			path = TheHapticPlayer;
+			sourceTree = "<group>";
+		};
+		96D8542A2FA5D126009900AA /* HapticActivityWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				96D8543A2FA5D126009900AA /* Exceptions for "HapticActivityWidget" folder in "HapticActivityWidgetExtension" target */,
+			);
+			path = HapticActivityWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -39,6 +95,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		96D854212FA5D125009900AA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				96D854292FA5D125009900AA /* SwiftUI.framework in Frameworks */,
+				96D854272FA5D125009900AA /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -46,6 +111,8 @@
 			isa = PBXGroup;
 			children = (
 				964032F22F89FC55009E54FA /* TheHapticPlayer */,
+				96D8542A2FA5D126009900AA /* HapticActivityWidget */,
+				96D854252FA5D125009900AA /* Frameworks */,
 				964032F12F89FC55009E54FA /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,8 +121,18 @@
 			isa = PBXGroup;
 			children = (
 				964032F02F89FC55009E54FA /* TheHapticPlayer.app */,
+				96D854242FA5D125009900AA /* HapticActivityWidgetExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		96D854252FA5D125009900AA /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				96D854262FA5D125009900AA /* WidgetKit.framework */,
+				96D854282FA5D125009900AA /* SwiftUI.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -68,10 +145,12 @@
 				964032EC2F89FC55009E54FA /* Sources */,
 				964032ED2F89FC55009E54FA /* Frameworks */,
 				964032EE2F89FC55009E54FA /* Resources */,
+				96D8543B2FA5D126009900AA /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				96D854352FA5D126009900AA /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				964032F22F89FC55009E54FA /* TheHapticPlayer */,
@@ -82,6 +161,28 @@
 			productName = TheHapticPlayer;
 			productReference = 964032F02F89FC55009E54FA /* TheHapticPlayer.app */;
 			productType = "com.apple.product-type.application";
+		};
+		96D854232FA5D125009900AA /* HapticActivityWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 96D854372FA5D126009900AA /* Build configuration list for PBXNativeTarget "HapticActivityWidgetExtension" */;
+			buildPhases = (
+				96D854202FA5D125009900AA /* Sources */,
+				96D854212FA5D125009900AA /* Frameworks */,
+				96D854222FA5D125009900AA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				96D8542A2FA5D126009900AA /* HapticActivityWidget */,
+			);
+			name = HapticActivityWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = HapticActivityWidgetExtension;
+			productReference = 96D854242FA5D125009900AA /* HapticActivityWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -94,6 +195,9 @@
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					964032EF2F89FC55009E54FA = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					96D854232FA5D125009900AA = {
 						CreatedOnToolsVersion = 26.3;
 					};
 				};
@@ -113,12 +217,20 @@
 			projectRoot = "";
 			targets = (
 				964032EF2F89FC55009E54FA /* TheHapticPlayer */,
+				96D854232FA5D125009900AA /* HapticActivityWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		964032EE2F89FC55009E54FA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		96D854222FA5D125009900AA /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -135,7 +247,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		96D854202FA5D125009900AA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		96D854352FA5D126009900AA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 96D854232FA5D125009900AA /* HapticActivityWidgetExtension */;
+			targetProxy = 96D854342FA5D126009900AA /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		964032F92F89FC55009E54FA /* Debug */ = {
@@ -327,6 +454,66 @@
 			};
 			name = Release;
 		};
+		96D854382FA5D126009900AA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = UG6T8LGBS7;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HapticActivityWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = HapticActivityWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = fromravindusj.TheHapticPlayer.HapticActivityWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		96D854392FA5D126009900AA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = UG6T8LGBS7;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HapticActivityWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = HapticActivityWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = fromravindusj.TheHapticPlayer.HapticActivityWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -344,6 +531,15 @@
 			buildConfigurations = (
 				964032FC2F89FC55009E54FA /* Debug */,
 				964032FD2F89FC55009E54FA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		96D854372FA5D126009900AA /* Build configuration list for PBXNativeTarget "HapticActivityWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				96D854382FA5D126009900AA /* Debug */,
+				96D854392FA5D126009900AA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
