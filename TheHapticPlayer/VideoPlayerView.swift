@@ -50,6 +50,8 @@ struct PlayerPresenter: UIViewRepresentable {
         var currentPlayer: AVPlayer?
         var currentVideoID: UUID?
         var hapticEngine = HapticEngineManager()
+        var devOverlayHost: UIHostingController<HapticDevOverlay>?
+        var devSession: HapticDevSession?
 
         func present(video: VideoItem, from sourceView: UIView) {
             guard playerVC == nil else { return }
@@ -103,6 +105,7 @@ struct PlayerPresenter: UIViewRepresentable {
                 do {
                     try hapticEngine.loadAHAP(from: ahapURL)
                     hapticEngine.attachToPlayer(avPlayer)
+                    setupDevOverlayIfEnabled(video: video, ahapURL: ahapURL, on: vc)
                 } catch {
                     print("Failed to load haptics: \(error)")
                 }
@@ -119,8 +122,64 @@ struct PlayerPresenter: UIViewRepresentable {
             }
         }
 
+        private func setupDevOverlayIfEnabled(video: VideoItem, ahapURL: URL, on vc: AVPlayerViewController) {
+            let defaults = UserDefaults.standard
+            guard defaults.bool(forKey: "developerModeEnabled"),
+                  defaults.bool(forKey: "hapticDevPanelEnabled") else { return }
+
+            let parsed = AHAPParser.parse(url: ahapURL)
+            guard !parsed.events.isEmpty else { return }
+
+            let session = HapticDevSession()
+            session.events = parsed.events
+            session.totalDuration = parsed.totalDuration
+            self.devSession = session
+
+            hapticEngine.onEventFired = { [weak session] event in
+                Task { @MainActor in session?.fire(event) }
+            }
+            hapticEngine.onTimeUpdated = { [weak session] t in
+                Task { @MainActor in
+                    session?.currentTime = t
+                    session?.tickWaveform()
+                }
+            }
+            hapticEngine.onSeekDetected = { [weak session] in
+                Task { @MainActor in session?.resetForSeek() }
+            }
+
+            let host = UIHostingController(rootView: HapticDevOverlay(session: session))
+            host.view.backgroundColor = .clear
+            self.devOverlayHost = host
+
+            vc.addChild(host)
+            let overlayContainer = vc.contentOverlayView ?? vc.view!
+            overlayContainer.addSubview(host.view)
+            host.view.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                host.view.topAnchor.constraint(equalTo: overlayContainer.safeAreaLayoutGuide.topAnchor, constant: 12),
+                host.view.leadingAnchor.constraint(equalTo: overlayContainer.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+                host.view.trailingAnchor.constraint(equalTo: overlayContainer.safeAreaLayoutGuide.trailingAnchor, constant: -16)
+            ])
+            host.didMove(toParent: vc)
+        }
+
+        private func teardownDevOverlay() {
+            if let host = devOverlayHost {
+                host.willMove(toParent: nil)
+                host.view.removeFromSuperview()
+                host.removeFromParent()
+            }
+            devOverlayHost = nil
+            devSession = nil
+            hapticEngine.onEventFired = nil
+            hapticEngine.onTimeUpdated = nil
+            hapticEngine.onSeekDetected = nil
+        }
+
         func dismiss(userInitiated: Bool) {
             savePosition()
+            teardownDevOverlay()
             hapticEngine.detach()
             currentPlayer?.pause()
             currentPlayer = nil

@@ -18,6 +18,13 @@ class HapticEngineManager {
 
     private(set) var isLoaded = false
 
+    // Developer hooks (nil unless dev panel is on)
+    var onEventFired: ((HapticEvent) -> Void)?
+    var onTimeUpdated: ((TimeInterval) -> Void)?
+    var onSeekDetected: (() -> Void)?
+    private var devEvents: [HapticEvent] = []
+    private var nextDevEventIndex: Int = 0
+
     // Engine
     private var engine: CHHapticEngine?
     private var engineNeedsStart = false
@@ -88,6 +95,10 @@ class HapticEngineManager {
                                        totalDuration: totalDuration)
         }
 
+        let parsed = AHAPParser.parse(url: url)
+        devEvents = parsed.events
+        nextDevEventIndex = 0
+
         configureAudioSession()
         try setupEngine()
         isLoaded = true
@@ -141,6 +152,26 @@ class HapticEngineManager {
         lastObservedMediaTime = 0
         lastObservedRealTime = 0
         isLoaded = false
+
+        onEventFired = nil
+        onTimeUpdated = nil
+        onSeekDetected = nil
+        devEvents = []
+        nextDevEventIndex = 0
+    }
+
+    private func firstDevEventIndex(after time: TimeInterval) -> Int {
+        var lo = 0
+        var hi = devEvents.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if devEvents[mid].time < time {
+                lo = mid + 1
+            } else {
+                hi = mid
+            }
+        }
+        return lo
     }
 
     private func unhookCurrentPlayer() {
@@ -257,6 +288,20 @@ class HapticEngineManager {
 
         lastObservedMediaTime = currentTime
         lastObservedRealTime = now
+
+        // Developer hooks — cheap when callbacks are nil.
+        onTimeUpdated?(currentTime)
+        if !devEvents.isEmpty {
+            if isSeek {
+                onSeekDetected?()
+                nextDevEventIndex = firstDevEventIndex(after: currentTime)
+            }
+            while nextDevEventIndex < devEvents.count,
+                  devEvents[nextDevEventIndex].time <= currentTime {
+                onEventFired?(devEvents[nextDevEventIndex])
+                nextDevEventIndex += 1
+            }
+        }
 
         guard player.timeControlStatus == .playing else { return }
 
